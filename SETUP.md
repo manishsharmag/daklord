@@ -241,9 +241,10 @@ If the automatic setup doesn't work for your environment, you can manually:
    ndk.dir=/path/to/android-sdk/ndk/26.1.10909125
    flutter.sdk=/path/to/flutter
    ```
+   > **Windows Tip:** Use forward slashes (e.g., `C:/Users/...`) or escape backslashes (e.g., `C:\\Users\\...`) so Gradle can read the paths correctly.
 
 2. Create jniLibs directories:
-   ```bash
+
    mkdir -p android/app/src/main/jniLibs/{armeabi-v7a,arm64-v8a,x86_64}
    ```
 
