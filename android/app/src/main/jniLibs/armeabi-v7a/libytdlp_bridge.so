@@ -1,4 +1,0 @@
-#!/system/bin/env sh
-# Placeholder yt-dlp bridge binary for armeabi-v7a.
-echo "yt-dlp bridge placeholder invoked"
-exit 0
