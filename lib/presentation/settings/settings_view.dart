@@ -2,11 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-final analyticsOptInProvider = StateProvider<bool>((ref) => true);
-final autoUpscaleProvider = StateProvider<bool>((ref) => false);
-final upscaleScaleFactorProvider = StateProvider<int>((ref) => 2);
-final autoSaveHistoryProvider = StateProvider<bool>((ref) => true);
-final privacyModeProvider = StateProvider<bool>((ref) => false);
+import 'package:insta_reel_downloader/data/providers/settings_providers.dart';
 
 class SettingsView extends ConsumerWidget {
   const SettingsView({super.key});
