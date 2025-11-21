@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:insta_reel_downloader/core/di/providers.dart';
 import 'package:insta_reel_downloader/data/providers/settings_providers.dart';
-import 'package:insta_reel_downloader/domain/entities/download_status.dart';
 import 'package:insta_reel_downloader/domain/entities/download_task.dart';
 import 'package:insta_reel_downloader/domain/entities/history_entry.dart';
 import 'package:insta_reel_downloader/domain/repositories/download_repository.dart';

@@ -19,9 +19,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.gpu.CompatibilityList
-import org.tensorflow.lite.gpu.GpuDelegate
-import org.tensorflow.lite.nnapi.NnApiDelegate
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -85,22 +82,7 @@ class UpscalerBridge(private val activity: FlutterActivity) :
         try {
             val modelFile = loadModelFile(activity.applicationContext)
             if (modelFile != null) {
-                val options = Interpreter.Options()
-                
-                val compatList = CompatibilityList()
-                if (compatList.isDelegateSupportedOnThisDevice) {
-                    val delegateOptions = compatList.bestOptionsForThisDevice
-                    val gpuDelegate = GpuDelegate(delegateOptions)
-                    options.addDelegate(gpuDelegate)
-                    delegate = gpuDelegate
-                } else {
-                    val nnApiDelegate = NnApiDelegate()
-                    options.addDelegate(nnApiDelegate)
-                    delegate = nnApiDelegate
-                }
-                
-                options.setNumThreads(4)
-                interpreter = Interpreter(modelFile, options)
+                interpreter = Interpreter(modelFile)
             }
         } catch (e: Exception) {
             interpreter = null
@@ -110,10 +92,6 @@ class UpscalerBridge(private val activity: FlutterActivity) :
     private fun cleanupModel() {
         interpreter?.close()
         interpreter = null
-        when (val d = delegate) {
-            is GpuDelegate -> d.close()
-            is NnApiDelegate -> d.close()
-        }
         delegate = null
     }
 
