@@ -1,0 +1,4 @@
+#!/system/bin/env sh
+# Placeholder stub for the bundled FFmpeg binary. The native bootstrapper
+# copies this file during development builds.
+echo "ffmpeg stub invoked"

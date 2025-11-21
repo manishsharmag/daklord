@@ -4,9 +4,16 @@ import 'package:insta_reel_downloader/domain/entities/download_status.dart';
 import 'package:insta_reel_downloader/domain/entities/download_task.dart';
 
 class DownloadTaskTile extends StatelessWidget {
-  const DownloadTaskTile({super.key, required this.task});
+  const DownloadTaskTile({
+    super.key,
+    required this.task,
+    this.onCancel,
+    this.onRetry,
+  });
 
   final DownloadTask task;
+  final VoidCallback? onCancel;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +43,11 @@ class DownloadTaskTile extends StatelessWidget {
                         _statusLabel(task.status),
                         style: theme.textTheme.bodySmall,
                       ),
+                      if (task.author != null)
+                        Text(
+                          task.author!,
+                          style: theme.textTheme.bodySmall,
+                        ),
                     ],
                   ),
                 ),
@@ -53,6 +65,41 @@ class DownloadTaskTile extends StatelessWidget {
             if (task.eta != null) ...[
               const SizedBox(height: 8),
               Text('ETA · ${_formatDuration(task.eta!)}'),
+            ],
+            if (task.duration != null) ...[
+              const SizedBox(height: 4),
+              Text('Duration · ${_formatDuration(task.duration!)}'),
+            ],
+            if (task.error != null && task.error!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                task.error!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ],
+            if (onCancel != null || onRetry != null) ...[
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (onCancel != null)
+                    TextButton.icon(
+                      onPressed: onCancel,
+                      icon: const Icon(Icons.cancel_outlined),
+                      label: const Text('Cancel'),
+                    ),
+                  if (onRetry != null) ...[
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      onPressed: onRetry,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
+                    ),
+                  ],
+                ],
+              ),
             ],
           ],
         ),

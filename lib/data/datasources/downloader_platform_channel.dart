@@ -4,23 +4,76 @@ import 'dart:math';
 import 'package:flutter/services.dart';
 
 import '../../core/constants/channel_names.dart';
+import '../../domain/entities/download_metadata.dart';
 import '../../domain/entities/download_status.dart';
 import '../../domain/entities/download_task.dart';
 import '../../domain/entities/history_entry.dart';
+import '../../domain/entities/url_validation_result.dart';
 import '../../domain/services/downloader_service.dart';
 
 class DownloaderChannelService implements DownloaderService {
-  DownloaderChannelService({MethodChannel? channel})
-    : _channel = channel ?? const MethodChannel(ChannelNames.downloader) {
-    _seedPlaceholderTraffic();
+  DownloaderChannelService({
+    MethodChannel? methodChannel,
+    EventChannel? eventChannel,
+  })  : _channel = methodChannel ?? const MethodChannel(ChannelNames.downloader),
+        _eventChannel =
+            eventChannel ?? const EventChannel(ChannelNames.downloaderEvents) {
+    _subscribeToNativeEvents();
+    _bootstrapActiveTasks();
   }
 
   final MethodChannel _channel;
+  final EventChannel _eventChannel;
   final _controller = StreamController<DownloadTask>.broadcast();
+  StreamSubscription<dynamic>? _nativeSubscription;
+  bool _seededFallbacks = false;
   final _random = Random();
 
   @override
   Stream<DownloadTask> observeTasks() => _controller.stream;
+
+  void _subscribeToNativeEvents() {
+    try {
+      _nativeSubscription = _eventChannel
+          .receiveBroadcastStream()
+          .listen(_handleNativeEvent, onError: _handleNativeError);
+    } on MissingPluginException {
+      _seedFallbackTraffic();
+    }
+  }
+
+  Future<void> _bootstrapActiveTasks() async {
+    try {
+      final payload = await _channel
+          .invokeListMethod<Map<dynamic, dynamic>>('getActiveDownloads');
+      if (payload == null) return;
+      for (final raw in payload) {
+        _emitTask(DownloadTask.fromMap(raw));
+      }
+    } on MissingPluginException {
+      _seedFallbackTraffic();
+    } on PlatformException {
+      _seedFallbackTraffic();
+    }
+  }
+
+  void _handleNativeEvent(dynamic event) {
+    final map = _coerceMap(event);
+    if (map == null) return;
+    _emitTask(DownloadTask.fromMap(map));
+  }
+
+  void _handleNativeError(Object error) {
+    if (_seededFallbacks) return;
+    _seedFallbackTraffic();
+  }
+
+  Map<String, dynamic>? _coerceMap(dynamic payload) {
+    if (payload is Map) {
+      return payload.map((key, value) => MapEntry(key.toString(), value));
+    }
+    return null;
+  }
 
   @override
   Future<DownloadTask> queueDownload(String url) async {
@@ -35,9 +88,9 @@ class DownloaderChannelService implements DownloaderService {
         return task;
       }
     } on PlatformException {
-      // Fall through to synthetic task below.
+      // Fall through to synthetic fallback.
     } on MissingPluginException {
-      // Fall through to synthetic task below.
+      // Fall through to synthetic fallback.
     }
     final task = _syntheticTask(url);
     _emitTask(task);
@@ -54,34 +107,128 @@ class DownloaderChannelService implements DownloaderService {
         return payload.map(HistoryEntry.fromMap).toList();
       }
     } on PlatformException {
-      // Ignore and use placeholder.
+      // Ignore and fallback.
     } on MissingPluginException {
-      // Ignore and use placeholder.
+      // Ignore and fallback.
     }
     return _syntheticHistory();
   }
 
-  void _seedPlaceholderTraffic() {
+  @override
+  Future<List<DownloadTask>> loadActiveTasks() async {
+    try {
+      final payload = await _channel
+          .invokeListMethod<Map<dynamic, dynamic>>('getActiveDownloads');
+      if (payload == null) return const [];
+      return payload.map(DownloadTask.fromMap).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  @override
+  Future<UrlValidationResult> validateUrl(String url) async {
+    try {
+      final payload = await _channel.invokeMapMethod<String, dynamic>(
+        'validateUrl',
+        {'url': url},
+      );
+      return UrlValidationResult.fromMap(payload);
+    } catch (_) {
+      final normalized = url.trim();
+      final isValid = normalized.contains('instagram.com/reel');
+      return UrlValidationResult(
+        originalUrl: url,
+        normalizedUrl: isValid ? normalized : null,
+        isValid: isValid,
+        reason: isValid ? null : 'URL must point to an Instagram reel',
+      );
+    }
+  }
+
+  @override
+  Future<DownloadMetadata> extractMetadata(String url) async {
+    try {
+      final payload = await _channel.invokeMapMethod<String, dynamic>(
+        'extractMetadata',
+        {'url': url},
+      );
+      if (payload != null) {
+        return DownloadMetadata.fromMap(payload);
+      }
+    } catch (_) {
+      // Fall through to heuristic metadata.
+    }
+    return DownloadMetadata(
+      url: url,
+      title: 'Reel preview',
+      author: '@instagram',
+      duration: const Duration(seconds: 45),
+      thumbnailUrl: null,
+      width: 1080,
+      height: 1920,
+    );
+  }
+
+  @override
+  Future<bool> ensureStorageAccess() async {
+    try {
+      final granted = await _channel.invokeMethod<bool>('ensureStorageAccess');
+      return granted ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  @override
+  Future<void> cancelDownload(String taskId) async {
+    try {
+      await _channel.invokeMethod('cancelDownload', {'taskId': taskId});
+    } catch (_) {
+      // Ignore errors to keep UI responsive.
+    }
+  }
+
+  @override
+  Future<void> retryDownload(String taskId) async {
+    try {
+      await _channel.invokeMethod('retryDownload', {'taskId': taskId});
+    } catch (_) {
+      // Ignore errors to keep UI responsive.
+    }
+  }
+
+  void _seedFallbackTraffic() {
+    if (_seededFallbacks) return;
+    _seededFallbacks = true;
     final placeholders = [
       DownloadTask(
         id: 'seed-downloading',
         url: 'https://instagram.com/reel/demo-1',
         title: 'Street fashion drop',
+        author: '@demo',
         status: DownloadStatus.downloading,
         progress: 0.42,
         eta: const Duration(minutes: 2, seconds: 10),
         createdAt: DateTime.now().subtract(const Duration(minutes: 1)),
         thumbnailUrl: null,
+        duration: const Duration(seconds: 45),
+        localPath: null,
+        error: null,
       ),
       DownloadTask(
         id: 'seed-queued',
         url: 'https://instagram.com/reel/demo-2',
         title: 'Food vlog mashup',
+        author: '@demo',
         status: DownloadStatus.preparing,
         progress: 0.15,
         eta: const Duration(minutes: 5),
         createdAt: DateTime.now().subtract(const Duration(minutes: 3)),
         thumbnailUrl: null,
+        duration: const Duration(seconds: 60),
+        localPath: null,
+        error: null,
       ),
     ];
 
@@ -96,11 +243,15 @@ class DownloaderChannelService implements DownloaderService {
       id: 'synthetic-$suffix',
       url: url,
       title: 'Queued reel $suffix',
+      author: '@instagram',
       status: DownloadStatus.queued,
       progress: 0,
       createdAt: DateTime.now(),
       eta: const Duration(minutes: 3),
       thumbnailUrl: null,
+      duration: const Duration(seconds: 50),
+      localPath: null,
+      error: null,
     );
   }
 
@@ -110,19 +261,25 @@ class DownloaderChannelService implements DownloaderService {
         id: 'history-1',
         url: 'https://instagram.com/reel/history-1',
         title: 'Dance challenge compilation',
+        author: '@demo',
         completedAt: DateTime.now().subtract(const Duration(hours: 2)),
         status: DownloadStatus.completed,
         thumbnailUrl: null,
         duration: const Duration(seconds: 45),
+        localPath: '/storage/emulated/0/Movies/demo1.mp4',
+        error: null,
       ),
       HistoryEntry(
         id: 'history-2',
         url: 'https://instagram.com/reel/history-2',
         title: 'Cityscape timelapse',
+        author: '@demo',
         completedAt: DateTime.now().subtract(const Duration(days: 1, hours: 4)),
         status: DownloadStatus.completed,
         thumbnailUrl: null,
         duration: const Duration(minutes: 1, seconds: 12),
+        localPath: '/storage/emulated/0/Movies/demo2.mp4',
+        error: null,
       ),
     ];
   }
@@ -135,6 +292,7 @@ class DownloaderChannelService implements DownloaderService {
 
   @override
   void dispose() {
+    _nativeSubscription?.cancel();
     _controller.close();
   }
 }

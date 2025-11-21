@@ -1,0 +1,4 @@
+#!/system/bin/env sh
+# Placeholder yt-dlp bridge binary for x86_64.
+echo "yt-dlp bridge placeholder invoked"
+exit 0

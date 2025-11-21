@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:insta_reel_downloader/domain/entities/download_metadata.dart';
 import 'package:insta_reel_downloader/presentation/home/home_controller.dart';
 
 class HomeView extends ConsumerStatefulWidget {
@@ -71,6 +72,39 @@ class _HomeViewState extends ConsumerState<HomeView> {
                       prefixIcon: Icon(Icons.link),
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: state.isCheckingUrl
+                        ? Row(
+                            children: [
+                              const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Validating reel link…',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          )
+                        : state.validationMessage == null
+                            ? const SizedBox.shrink()
+                            : Text(
+                                state.validationMessage!,
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: state.isValidUrl
+                                          ? Theme.of(context).colorScheme.primary
+                                          : Theme.of(context).colorScheme.error,
+                                    ),
+                              ),
+                  ),
+                  if (state.metadata != null) ...[
+                    const SizedBox(height: 12),
+                    _MetadataPreview(metadata: state.metadata!),
+                  ],
                   const SizedBox(height: 16),
                   Wrap(
                     spacing: 12,
@@ -141,5 +175,65 @@ class _HomeViewState extends ConsumerState<HomeView> {
         );
       },
     );
+  }
+}
+
+class _MetadataPreview extends StatelessWidget {
+  const _MetadataPreview({required this.metadata});
+
+  final DownloadMetadata metadata;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: theme.colorScheme.primaryContainer,
+              child: Icon(
+                Icons.movie,
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    metadata.title,
+                    style: theme.textTheme.titleMedium,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    metadata.author,
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Duration · ${_formatDuration(metadata.duration)}',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatDuration(Duration duration) {
+    final minutes = duration.inMinutes;
+    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+    if (minutes > 0) {
+      return '$minutes:$seconds';
+    }
+    return '${duration.inSeconds}s';
   }
 }
