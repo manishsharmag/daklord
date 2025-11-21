@@ -1,0 +1,158 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String     @id @default(cuid())
+  email     String     @unique
+  name      String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  bookmarks Bookmark[]
+}
+
+model Result {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  category    String
+  releaseDate DateTime
+  expiryDate  DateTime?
+  url         String?
+  content     String?
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  bookmarks   Bookmark[]
+
+  @@index([category])
+  @@index([releaseDate])
+}
+
+model Notice {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  content     String?
+  priority    Int      @default(0)
+  imageUrl    String?
+  publishedAt DateTime
+  expiryDate  DateTime?
+  url         String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  bookmarks   Bookmark[]
+
+  @@index([publishedAt])
+  @@index([priority])
+}
+
+model JobPosting {
+  id              String   @id @default(cuid())
+  title           String
+  company         String
+  description     String?
+  location        String?
+  jobType         String   @default("FULL_TIME")
+  salary          String?
+  requirements    String?
+  applicationUrl  String?
+  postedDate      DateTime
+  expiryDate      DateTime?
+  imageUrl        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  bookmarks       Bookmark[]
+
+  @@index([postedDate])
+  @@index([expiryDate])
+}
+
+model AdmitCard {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  downloadUrl String?
+  examDate    DateTime?
+  releaseDate DateTime
+  expiryDate  DateTime?
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  bookmarks   Bookmark[]
+
+  @@index([releaseDate])
+  @@index([examDate])
+}
+
+model PreviousPaper {
+  id          String   @id @default(cuid())
+  title       String
+  subject     String?
+  year        Int
+  pdfUrl      String?
+  description String?
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  bookmarks   Bookmark[]
+
+  @@index([year])
+  @@index([subject])
+}
+
+model Resource {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  category    String
+  resourceUrl String?
+  imageUrl    String?
+  type        String   @default("DOCUMENT")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  bookmarks   Bookmark[]
+
+  @@index([category])
+  @@index([type])
+}
+
+model Bookmark {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resultId        String?
+  result          Result?  @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  noticeId        String?
+  notice          Notice?  @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+  jobPostingId    String?
+  jobPosting      JobPosting? @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  admitCardId     String?
+  admitCard       AdmitCard? @relation(fields: [admitCardId], references: [id], onDelete: Cascade)
+  previousPaperId String?
+  previousPaper   PreviousPaper? @relation(fields: [previousPaperId], references: [id], onDelete: Cascade)
+  resourceId      String?
+  resource        Resource? @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, resultId, noticeId, jobPostingId, admitCardId, previousPaperId, resourceId])
+  @@index([userId])
+}
+
+model CacheKey {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String?
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "file:./prisma/dev.db"
+      REDIS_URL: "redis://redis:6379"
+      NEXT_PUBLIC_SITE_URL: "http://localhost:3000"
+      NODE_ENV: "production"
+    depends_on:
+      - redis
+    volumes:
+      - ./prisma:/app/prisma
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+
+volumes:
+  redis-data:
