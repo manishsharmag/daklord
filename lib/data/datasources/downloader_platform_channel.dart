@@ -10,24 +10,37 @@ import '../../domain/entities/download_task.dart';
 import '../../domain/entities/history_entry.dart';
 import '../../domain/entities/url_validation_result.dart';
 import '../../domain/services/downloader_service.dart';
+import 'history_database.dart';
 
 class DownloaderChannelService implements DownloaderService {
   DownloaderChannelService({
     MethodChannel? methodChannel,
     EventChannel? eventChannel,
+    HistoryDatabase? historyDatabase,
   })  : _channel = methodChannel ?? const MethodChannel(ChannelNames.downloader),
         _eventChannel =
-            eventChannel ?? const EventChannel(ChannelNames.downloaderEvents) {
+            eventChannel ?? const EventChannel(ChannelNames.downloaderEvents),
+        _historyDatabase = historyDatabase ?? HistoryDatabase() {
     _subscribeToNativeEvents();
     _bootstrapActiveTasks();
+    _initializeDatabase();
   }
 
   final MethodChannel _channel;
   final EventChannel _eventChannel;
+  final HistoryDatabase _historyDatabase;
   final _controller = StreamController<DownloadTask>.broadcast();
   StreamSubscription<dynamic>? _nativeSubscription;
   bool _seededFallbacks = false;
   final _random = Random();
+
+  Future<void> _initializeDatabase() async {
+    try {
+      await _historyDatabase.initialize();
+    } catch (_) {
+      // Database initialization error, continue anyway
+    }
+  }
 
   @override
   Stream<DownloadTask> observeTasks() => _controller.stream;
@@ -99,6 +112,14 @@ class DownloaderChannelService implements DownloaderService {
 
   @override
   Future<List<HistoryEntry>> loadHistory() async {
+    try {
+      final localEntries = await _historyDatabase.loadAll();
+      if (localEntries.isNotEmpty) {
+        return localEntries;
+      }
+    } catch (_) {
+      // Continue to native fallback
+    }
     try {
       final payload = await _channel.invokeListMethod<Map<dynamic, dynamic>>(
         'loadHistory',
@@ -198,6 +219,24 @@ class DownloaderChannelService implements DownloaderService {
     }
   }
 
+  @override
+  Future<void> saveHistoryEntry(HistoryEntry entry) async {
+    try {
+      await _historyDatabase.saveEntry(entry);
+    } catch (_) {
+      // Database save error, continue anyway
+    }
+  }
+
+  @override
+  Future<void> deleteHistoryEntry(String entryId) async {
+    try {
+      await _historyDatabase.deleteEntry(entryId);
+    } catch (_) {
+      // Database delete error, continue anyway
+    }
+  }
+
   void _seedFallbackTraffic() {
     if (_seededFallbacks) return;
     _seededFallbacks = true;
@@ -294,5 +333,6 @@ class DownloaderChannelService implements DownloaderService {
   void dispose() {
     _nativeSubscription?.cancel();
     _controller.close();
+    _historyDatabase.close();
   }
 }

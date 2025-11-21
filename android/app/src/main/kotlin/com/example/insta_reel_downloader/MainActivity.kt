@@ -1,5 +1,6 @@
 package com.example.insta_reel_downloader
 
+import android.content.Intent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -7,6 +8,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private lateinit var downloaderBridge: DownloaderBridge
     private lateinit var upscalerBridge: UpscalerBridge
+    private lateinit var sharedIntentBridge: SharedIntentBridge
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -15,6 +17,16 @@ class MainActivity : FlutterActivity() {
 
         upscalerBridge = UpscalerBridge(this)
         upscalerBridge.start(flutterEngine)
+
+        sharedIntentBridge = SharedIntentBridge(this)
+        sharedIntentBridge.start(flutterEngine)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (this::sharedIntentBridge.isInitialized) {
+            sharedIntentBridge.onNewIntent(intent)
+        }
     }
 
     override fun onRequestPermissionsResult(

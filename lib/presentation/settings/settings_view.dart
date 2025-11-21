@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 final analyticsOptInProvider = StateProvider<bool>((ref) => true);
 final autoUpscaleProvider = StateProvider<bool>((ref) => false);
 final upscaleScaleFactorProvider = StateProvider<int>((ref) => 2);
+final autoSaveHistoryProvider = StateProvider<bool>((ref) => true);
+final privacyModeProvider = StateProvider<bool>((ref) => false);
 
 class SettingsView extends ConsumerWidget {
   const SettingsView({super.key});
@@ -14,6 +16,8 @@ class SettingsView extends ConsumerWidget {
     final analyticsOptIn = ref.watch(analyticsOptInProvider);
     final autoUpscale = ref.watch(autoUpscaleProvider);
     final scaleFactor = ref.watch(upscaleScaleFactorProvider);
+    final autoSaveHistory = ref.watch(autoSaveHistoryProvider);
+    final privacyMode = ref.watch(privacyModeProvider);
 
     return ListView(
       padding: const EdgeInsets.all(24),
@@ -82,6 +86,34 @@ class SettingsView extends ConsumerWidget {
             value: analyticsOptIn,
             onChanged: (value) =>
                 ref.read(analyticsOptInProvider.notifier).state = value,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: SwitchListTile.adaptive(
+            title: const Text('Auto-save download history'),
+            subtitle: const Text(
+              'Automatically save downloaded reels to history database.',
+            ),
+            value: autoSaveHistory,
+            onChanged: (value) =>
+                ref.read(autoSaveHistoryProvider.notifier).state = value,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: SwitchListTile.adaptive(
+            title: const Text('Privacy mode'),
+            subtitle: const Text(
+              'Disable history tracking and auto-save. No URLs stored.',
+            ),
+            value: privacyMode,
+            onChanged: (value) {
+              ref.read(privacyModeProvider.notifier).state = value;
+              if (value) {
+                ref.read(autoSaveHistoryProvider.notifier).state = false;
+              }
+            },
           ),
         ),
         const SizedBox(height: 12),

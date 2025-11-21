@@ -188,11 +188,30 @@ class DownloadsView extends ConsumerWidget {
                           ),
                       ],
                     ),
-                    trailing: Icon(
-                      entry.status == DownloadStatus.completed
-                          ? Icons.check_circle
-                          : Icons.history,
-                      color: Theme.of(context).colorScheme.primary,
+                    trailing: PopupMenuButton<String>(
+                      onSelected: (value) async {
+                        if (value == 'delete') {
+                          unawaited(controller.deleteHistoryEntry(entry.id));
+                        }
+                      },
+                      itemBuilder: (BuildContext context) => [
+                        const PopupMenuItem<String>(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete_outline),
+                              SizedBox(width: 8),
+                              Text('Delete'),
+                            ],
+                          ),
+                        ),
+                      ],
+                      child: Icon(
+                        entry.status == DownloadStatus.completed
+                            ? Icons.check_circle
+                            : Icons.history,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
                   ),
                   if (entry.localPath != null &&
