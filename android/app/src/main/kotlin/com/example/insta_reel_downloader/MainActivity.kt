@@ -42,6 +42,19 @@ class MainActivity : FlutterActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == 9913) { // PERMISSION_REQUEST_CODE
+            // Handle MANAGE_EXTERNAL_STORAGE permission result
+            if (this::downloaderBridge.isInitialized) {
+                // Simulate permission result callback
+                val granted = android.os.Environment.isExternalStorageManager()
+                downloaderBridge.onRequestPermissionsResult(requestCode, emptyArray(), intArrayOf(if (granted) 0 else -1))
+            }
+        } else {
+            super.onActivityResult(requestCode, resultCode, data)
+        }
+    }
+
     override fun onDestroy() {
         if (this::downloaderBridge.isInitialized) {
             downloaderBridge.dispose()

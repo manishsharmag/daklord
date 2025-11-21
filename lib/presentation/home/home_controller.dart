@@ -29,6 +29,10 @@ class HomeController extends StateNotifier<HomeState> {
 
   DownloadRepository get _repository => _ref.read(downloadRepositoryProvider);
 
+  void onUpscaleFactorChanged(int? factor) {
+    state = state.copyWith(upscaleFactor: factor);
+  }
+
   void _initializeSharedIntent() {
     _sharedIntentHandler = _ref.read(sharedIntentHandlerProvider);
     _checkSharedUrl();
@@ -179,10 +183,13 @@ class HomeController extends StateNotifier<HomeState> {
         return;
       }
       final url = (state.normalizedUrl ?? state.url).trim();
-      final DownloadTask task = await _repository.enqueueDownload(url);
+      final DownloadTask task = await _repository.enqueueDownload(
+        url,
+        upscaleFactor: state.upscaleFactor ?? 0,
+      );
       state = state.copyWith(
         isSubmitting: false,
-        feedback: 'Queued ${task.title ?? 'new reel'}',
+        feedback: 'Queued ${task.title ?? 'new reel'}${task.upscaleFactor > 0 ? ' (${task.upscaleFactor}x upscale)' : ''}',
         feedbackSpecified: true,
         isError: false,
       );
@@ -215,6 +222,7 @@ class HomeState extends Equatable {
     this.normalizedUrl,
     this.validationMessage,
     this.metadata,
+    this.upscaleFactor = 0,
   });
 
   final String url;
@@ -226,6 +234,7 @@ class HomeState extends Equatable {
   final String? normalizedUrl;
   final String? validationMessage;
   final DownloadMetadata? metadata;
+  final int upscaleFactor;
 
   bool get canSubmit => isValidUrl && !isSubmitting;
 
@@ -239,6 +248,7 @@ class HomeState extends Equatable {
     String? normalizedUrl,
     String? validationMessage,
     DownloadMetadata? metadata,
+    int? upscaleFactor,
     bool feedbackSpecified = false,
     bool metadataSpecified = false,
     bool normalizedUrlSpecified = false,
@@ -257,6 +267,7 @@ class HomeState extends Equatable {
           ? validationMessage
           : (validationMessage ?? this.validationMessage),
       metadata: metadataSpecified ? metadata : (metadata ?? this.metadata),
+      upscaleFactor: upscaleFactor ?? this.upscaleFactor,
     );
   }
 
@@ -271,5 +282,6 @@ class HomeState extends Equatable {
         normalizedUrl,
         validationMessage,
         metadata,
+        upscaleFactor,
       ];
 }

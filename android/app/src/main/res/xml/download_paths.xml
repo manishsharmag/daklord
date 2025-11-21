@@ -6,4 +6,10 @@
     <external-path
         name="legacy_downloads"
         path="Download/" />
+    <external-path
+        name="documents_downloads"
+        path="Documents/InstaReelDownloader/" />
+    <external-cache-path
+        name="cache_downloads"
+        path="downloads/" />
 </paths>

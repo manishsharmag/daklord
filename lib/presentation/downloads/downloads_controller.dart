@@ -8,6 +8,7 @@ import 'package:insta_reel_downloader/data/providers/settings_providers.dart';
 import 'package:insta_reel_downloader/domain/entities/download_task.dart';
 import 'package:insta_reel_downloader/domain/entities/history_entry.dart';
 import 'package:insta_reel_downloader/domain/repositories/download_repository.dart';
+import 'package:insta_reel_downloader/presentation/downloads/upscale_controller.dart';
 
 final downloadsControllerProvider =
     StateNotifierProvider<DownloadsController, DownloadsState>((ref) {
@@ -31,6 +32,11 @@ class DownloadsController extends StateNotifier<DownloadsState> {
         if (autoSave && !privacyMode) {
           for (final task in newlyCompleted) {
             await _saveTaskToHistory(task);
+
+            // Auto-upscale if requested
+            if (task.upscaleFactor > 0) {
+              await _autoUpscale(task);
+            }
           }
         }
         await _refreshHistoryInternal();
@@ -94,6 +100,22 @@ class DownloadsController extends StateNotifier<DownloadsState> {
     } catch (_) {
       // Error occurred, try to refresh state anyway
       await _refreshHistoryInternal();
+    }
+  }
+
+  Future<void> _autoUpscale(DownloadTask task) async {
+    try {
+      if (task.localPath != null) {
+        final scaleFactor = _ref.read(upscaleScaleFactorProvider);
+        final upscaleController = _ref.read(upscaleControllerProvider.notifier);
+        await upscaleController.upscaleVideo(
+          videoPath: task.localPath!,
+          scaleFactor: task.upscaleFactor,
+        );
+      }
+    } catch (e) {
+      // Log error but don't fail the download completion
+      print('Auto-upscaling failed: $e');
     }
   }
 
