@@ -4,6 +4,25 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val localPropertiesFile = File(rootProject.projectDir, "local.properties")
+if (localPropertiesFile.exists()) {
+    val ndkLine = localPropertiesFile.readLines()
+        .firstOrNull { line ->
+            val trimmed = line.trimStart()
+            trimmed.startsWith("ndk.dir=") && !trimmed.startsWith("#")
+        }
+
+    ndkLine?.substringAfter("ndk.dir=")?.let { rawValue ->
+        val invalidBackslashPattern = Regex("""(?<!\\)\\(?!\\)""")
+        if (invalidBackslashPattern.containsMatchIn(rawValue)) {
+            throw org.gradle.api.GradleException(
+                "ndk.dir in local.properties contains unescaped backslashes. " +
+                    "Use forward slashes (C:/path) or escape them (C:\\\\path)."
+            )
+        }
+    }
+}
+
 android {
     namespace = "com.example.insta_reel_downloader"
     compileSdk = flutter.compileSdkVersion

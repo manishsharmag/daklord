@@ -31,6 +31,33 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+normalize_path() {
+    local raw="$1"
+
+    if [ -z "$raw" ]; then
+        echo ""
+        return
+    fi
+
+    raw="$(printf '%s' "$raw" | tr -d '\r')"
+    raw="${raw%\"}"
+    raw="${raw#\"}"
+
+    if [[ "$raw" =~ ^/([a-zA-Z])/(.*) ]]; then
+        local drive_letter="${BASH_REMATCH[1]}"
+        local remainder="${BASH_REMATCH[2]}"
+        raw="${drive_letter^^}:/${remainder}"
+    fi
+
+    raw="${raw//\\//}"
+
+    if [[ "$raw" =~ ^([a-zA-Z]):([^/].*) ]]; then
+        raw="${BASH_REMATCH[1]}:/${BASH_REMATCH[2]}"
+    fi
+
+    echo "$raw"
+}
+
 # 1. Detect Flutter SDK
 log_info "Detecting Flutter SDK..."
 FLUTTER_SDK=""
@@ -49,6 +76,8 @@ else
     log_warn "Flutter SDK not found in PATH. Will skip Flutter commands."
     log_warn "Please install Flutter SDK from https://flutter.dev/docs/get-started/install"
 fi
+
+FLUTTER_SDK="$(normalize_path "$FLUTTER_SDK")"
 
 # 2. Detect Android SDK
 log_info "Detecting Android SDK..."
@@ -70,6 +99,8 @@ else
     log_error "Please install Android SDK or set ANDROID_HOME environment variable"
     exit 1
 fi
+
+ANDROID_SDK="$(normalize_path "$ANDROID_SDK")"
 
 # 3. Detect NDK
 log_info "Detecting Android NDK..."
@@ -102,6 +133,8 @@ if [ -z "$NDK_PATH" ]; then
         log_warn "  Android Studio -> SDK Manager -> SDK Tools -> NDK"
     fi
 fi
+
+NDK_PATH="$(normalize_path "$NDK_PATH")"
 
 # 4. Create/Update local.properties
 log_info "Configuring local.properties..."
