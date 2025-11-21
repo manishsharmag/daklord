@@ -8,7 +8,6 @@ import 'package:insta_reel_downloader/domain/entities/download_status.dart';
 import 'package:insta_reel_downloader/domain/entities/download_task.dart';
 import 'package:insta_reel_downloader/domain/entities/history_entry.dart';
 import 'package:insta_reel_downloader/domain/repositories/download_repository.dart';
-import 'package:insta_reel_downloader/presentation/settings/settings_view.dart';
 
 final downloadsControllerProvider =
     StateNotifierProvider<DownloadsController, DownloadsState>((ref) {
