@@ -17,6 +17,7 @@ class DownloadTask extends Equatable {
     this.duration,
     this.localPath,
     this.error,
+    this.upscaleFactor = 0,
   });
 
   final String id;
@@ -32,6 +33,7 @@ class DownloadTask extends Equatable {
   final Duration? duration;
   final String? localPath;
   final String? error;
+  final int upscaleFactor;
 
   bool get isComplete => status == DownloadStatus.completed;
 
@@ -49,6 +51,7 @@ class DownloadTask extends Equatable {
     Duration? duration,
     String? localPath,
     String? error,
+    int? upscaleFactor,
   }) {
     return DownloadTask(
       id: id ?? this.id,
@@ -64,6 +67,7 @@ class DownloadTask extends Equatable {
       duration: duration ?? this.duration,
       localPath: localPath ?? this.localPath,
       error: error ?? this.error,
+      upscaleFactor: upscaleFactor ?? this.upscaleFactor,
     );
   }
 
@@ -81,6 +85,7 @@ class DownloadTask extends Equatable {
     'durationSeconds': duration?.inSeconds,
     'localPath': localPath,
     'error': error,
+    'upscaleFactor': upscaleFactor,
   };
 
   factory DownloadTask.fromMap(Map<dynamic, dynamic> map) {
@@ -100,6 +105,7 @@ class DownloadTask extends Equatable {
       duration: durationSeconds is num ? Duration(seconds: durationSeconds.toInt()) : null,
       localPath: map['localPath']?.toString(),
       error: map['error']?.toString(),
+      upscaleFactor: map['upscaleFactor'] is num ? (map['upscaleFactor'] as num).toInt() : 0,
     );
   }
 
@@ -127,18 +133,19 @@ class DownloadTask extends Equatable {
 
   @override
   List<Object?> get props => [
-    id,
-    url,
-    title,
-    author,
-    status,
-    progress,
-    eta,
-    createdAt,
-    completedAt,
-    thumbnailUrl,
-    duration,
-    localPath,
-    error,
-  ];
+        id,
+        url,
+        title,
+        author,
+        status,
+        progress,
+        eta,
+        createdAt,
+        completedAt,
+        thumbnailUrl,
+        duration,
+        localPath,
+        error,
+        upscaleFactor,
+      ];
 }

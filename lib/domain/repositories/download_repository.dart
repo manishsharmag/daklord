@@ -4,7 +4,7 @@ import '../entities/history_entry.dart';
 import '../entities/url_validation_result.dart';
 
 abstract class DownloadRepository {
-  Future<DownloadTask> enqueueDownload(String url);
+  Future<DownloadTask> enqueueDownload(String url, {int upscaleFactor = 0});
 
   Stream<List<DownloadTask>> watchDownloads();
 

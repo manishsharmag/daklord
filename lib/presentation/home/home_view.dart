@@ -106,6 +106,61 @@ class _HomeViewState extends ConsumerState<HomeView> {
                     _MetadataPreview(metadata: state.metadata!),
                   ],
                   const SizedBox(height: 16),
+                  
+                  // Upscaling options
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.auto_awesome,
+                                color: Theme.of(context).colorScheme.primary,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'AI Upscaling',
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<int>(
+                            value: state.upscaleFactor,
+                            decoration: const InputDecoration(
+                              labelText: 'Upscale quality',
+                              hintText: 'Choose upscaling factor',
+                              prefixIcon: Icon(Icons.hd),
+                            ),
+                            items: const [
+                              DropdownMenuItem(value: 0, child: Text('No upscaling')),
+                              DropdownMenuItem(value: 2, child: Text('2x Quality')),
+                              DropdownMenuItem(value: 4, child: Text('4x Quality')),
+                            ],
+                            onChanged: (value) {
+                              if (value != null) {
+                                ref.read(homeControllerProvider.notifier).onUpscaleFactorChanged(value);
+                              }
+                            },
+                          ),
+                          if (state.upscaleFactor > 0) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Video will be upscaled ${state.upscaleFactor}x after download',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   Wrap(
                     spacing: 12,
                     runSpacing: 12,
@@ -191,12 +246,39 @@ class _MetadataPreview extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            CircleAvatar(
-              backgroundColor: theme.colorScheme.primaryContainer,
-              child: Icon(
-                Icons.movie,
-                color: theme.colorScheme.onPrimaryContainer,
+            // Thumbnail with fallback
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: theme.colorScheme.primaryContainer,
               ),
+              child: metadata.thumbnailUrl != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        metadata.thumbnailUrl!,
+                        width: 60,
+                        height: 60,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return _buildFallbackIcon(theme);
+                        },
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Center(
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                theme.colorScheme.primary,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    )
+                  : _buildFallbackIcon(theme),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -215,9 +297,30 @@ class _MetadataPreview extends StatelessWidget {
                     style: theme.textTheme.bodySmall,
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    'Duration · ${_formatDuration(metadata.duration)}',
-                    style: theme.textTheme.bodySmall,
+                  Row(
+                    children: [
+                      Text(
+                        'Duration · ${_formatDuration(metadata.duration)}',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      if (metadata.width != null && metadata.height != null) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.secondaryContainer,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '${metadata.width}×${metadata.height}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSecondaryContainer,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),
@@ -225,6 +328,14 @@ class _MetadataPreview extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildFallbackIcon(ThemeData theme) {
+    return Icon(
+      Icons.movie,
+      color: theme.colorScheme.onPrimaryContainer,
+      size: 30,
     );
   }
 

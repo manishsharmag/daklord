@@ -89,11 +89,11 @@ class DownloaderChannelService implements DownloaderService {
   }
 
   @override
-  Future<DownloadTask> queueDownload(String url) async {
+  Future<DownloadTask> queueDownload(String url, {int upscaleFactor = 0}) async {
     try {
       final payload = await _channel.invokeMapMethod<String, dynamic>(
         'queueDownload',
-        {'url': url},
+        {'url': url, 'upscaleFactor': upscaleFactor},
       );
       if (payload != null) {
         final task = DownloadTask.fromMap(payload);
@@ -105,7 +105,7 @@ class DownloaderChannelService implements DownloaderService {
     } on MissingPluginException {
       // Fall through to synthetic fallback.
     }
-    final task = _syntheticTask(url);
+    final task = _syntheticTask(url, upscaleFactor);
     _emitTask(task);
     return task;
   }
@@ -276,7 +276,7 @@ class DownloaderChannelService implements DownloaderService {
     }
   }
 
-  DownloadTask _syntheticTask(String url) {
+  DownloadTask _syntheticTask(String url, [int upscaleFactor = 0]) {
     final suffix = _random.nextInt(9999).toString().padLeft(4, '0');
     return DownloadTask(
       id: 'synthetic-$suffix',
@@ -291,6 +291,7 @@ class DownloaderChannelService implements DownloaderService {
       duration: const Duration(seconds: 50),
       localPath: null,
       error: null,
+      upscaleFactor: upscaleFactor,
     );
   }
 

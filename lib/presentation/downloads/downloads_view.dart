@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:insta_reel_downloader/data/providers/settings_providers.dart';
 import 'package:insta_reel_downloader/domain/entities/download_status.dart';
@@ -175,17 +177,20 @@ class DownloadsView extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (entry.localPath != null)
+                          Text(
+                            '📁 ${entry.localPath!}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
                         Text(
                           'Completed ${_timeAgo(entry.completedAt)} · '
                           '${entry.author ?? entry.url}',
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
-                        if (entry.localPath != null)
-                          Text(
-                            entry.localPath!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
                       ],
                     ),
                     trailing: PopupMenuButton<String>(
@@ -252,6 +257,14 @@ class DownloadsView extends ConsumerWidget {
                             icon: const Icon(Icons.auto_awesome),
                             label: Text('Upscale ${scaleFactor}x'),
                           ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            onPressed: () async {
+                              await _openFile(entry.localPath!);
+                            },
+                            icon: const Icon(Icons.open_in_new),
+                            label: const Text('Open'),
+                          ),
                         ],
                       ),
                     ),
@@ -293,6 +306,27 @@ class DownloadsView extends ConsumerWidget {
         return 'Completed';
       case UpscaleStatus.failed:
         return 'Failed';
+    }
+  }
+
+  Future<void> _openFile(String filePath) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        throw Exception('File not found');
+      }
+
+      // Try to open with video player intent
+      final uri = Uri.file(file.absolute.path);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      } else {
+        // Fallback: show file info
+        throw Exception('Cannot open file');
+      }
+    } catch (e) {
+      // Show error message or fallback options
+      debugPrint('Error opening file: $e');
     }
   }
 }

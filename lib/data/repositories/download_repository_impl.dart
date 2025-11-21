@@ -49,8 +49,8 @@ class DownloadRepositoryImpl implements DownloadRepository {
   }
 
   @override
-  Future<DownloadTask> enqueueDownload(String url) async {
-    final task = await _downloaderService.queueDownload(url);
+  Future<DownloadTask> enqueueDownload(String url, {int upscaleFactor = 0}) async {
+    final task = await _downloaderService.queueDownload(url, upscaleFactor: upscaleFactor);
     return task;
   }
 
