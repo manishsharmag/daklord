@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:insta_reel_downloader/data/providers/settings_providers.dart';
 import 'package:insta_reel_downloader/domain/entities/download_status.dart';
 import 'package:insta_reel_downloader/domain/entities/upscale_status.dart';
 import 'package:insta_reel_downloader/presentation/downloads/downloads_controller.dart';
 import 'package:insta_reel_downloader/presentation/downloads/upscale_controller.dart';
-import 'package:insta_reel_downloader/presentation/settings/settings_view.dart';
 import 'package:insta_reel_downloader/presentation/widgets/download_task_tile.dart';
 
 class DownloadsView extends ConsumerWidget {
