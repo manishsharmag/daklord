@@ -1,2 +1,4 @@
-Placeholder FFmpeg bridge binary for x86_64.
-Replace with bundled binary when available.
+#!/system/bin/env sh
+# Placeholder FFmpeg bridge binary for x86_64.
+echo "ffmpeg bridge placeholder invoked"
+exit 0

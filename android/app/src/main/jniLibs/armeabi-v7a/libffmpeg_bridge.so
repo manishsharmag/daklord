@@ -1,2 +1,4 @@
-Placeholder FFmpeg bridge binary for armeabi-v7a.
-Replace with bundled binary when available.
+#!/system/bin/env sh
+# Placeholder FFmpeg bridge binary for armeabi-v7a.
+echo "ffmpeg bridge placeholder invoked"
+exit 0

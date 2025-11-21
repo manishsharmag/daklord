@@ -1,2 +1,4 @@
-Placeholder FFmpeg bridge binary for arm64-v8a.
-Replace with the actual native binary in production builds.
+#!/system/bin/env sh
+# Placeholder FFmpeg bridge binary for arm64-v8a.
+echo "ffmpeg bridge placeholder invoked"
+exit 0

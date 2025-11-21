@@ -36,6 +36,7 @@ class HomeController extends StateNotifier<HomeState> {
       isValidUrl: false,
       isCheckingUrl: trimmed.isNotEmpty,
       validationMessage: null,
+      validationMessageSpecified: true,
       normalizedUrlSpecified: true,
       normalizedUrl: null,
       metadataSpecified: true,
@@ -45,6 +46,7 @@ class HomeController extends StateNotifier<HomeState> {
       state = state.copyWith(
         isCheckingUrl: false,
         validationMessage: null,
+        validationMessageSpecified: true,
         metadataSpecified: true,
         metadata: null,
       );
@@ -69,14 +71,6 @@ class HomeController extends StateNotifier<HomeState> {
     onUrlChanged(clipboardValue);
     state = state.copyWith(
       feedback: 'Link pasted',
-      feedbackSpecified: true,
-      isError: false,
-    );
-  }
-
-  Future<void> shareCurrentLink() async {
-    state = state.copyWith(
-      feedback: 'Share targets will surface once native integration lands.',
       feedbackSpecified: true,
       isError: false,
     );
@@ -227,6 +221,7 @@ class HomeState extends Equatable {
     bool feedbackSpecified = false,
     bool metadataSpecified = false,
     bool normalizedUrlSpecified = false,
+    bool validationMessageSpecified = false,
   }) {
     return HomeState(
       url: url ?? this.url,
@@ -237,7 +232,9 @@ class HomeState extends Equatable {
       isValidUrl: isValidUrl ?? this.isValidUrl,
       normalizedUrl:
           normalizedUrlSpecified ? normalizedUrl : (normalizedUrl ?? this.normalizedUrl),
-      validationMessage: validationMessage ?? this.validationMessage,
+      validationMessage: validationMessageSpecified
+          ? validationMessage
+          : (validationMessage ?? this.validationMessage),
       metadata: metadataSpecified ? metadata : (metadata ?? this.metadata),
     );
   }

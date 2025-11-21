@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -44,10 +46,14 @@ class DownloadsView extends ConsumerWidget {
               child: DownloadTaskTile(
                 task: task,
                 onCancel: isCancelable
-                    ? () => controller.cancelTask(task.id)
+                    ? () {
+                        unawaited(controller.cancelTask(task.id));
+                      }
                     : null,
                 onRetry: isRetryable
-                    ? () => controller.retryTask(task.id)
+                    ? () {
+                        unawaited(controller.retryTask(task.id));
+                      }
                     : null,
               ),
             );
@@ -69,6 +75,7 @@ class DownloadsView extends ConsumerWidget {
                 title: Text(entry.title ?? entry.url),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       'Completed ${_timeAgo(entry.completedAt)} · '
