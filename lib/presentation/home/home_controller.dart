@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:insta_reel_downloader/core/di/providers.dart';
+import 'package:insta_reel_downloader/data/datasources/shared_intent_channel.dart';
 import 'package:insta_reel_downloader/domain/entities/download_metadata.dart';
 import 'package:insta_reel_downloader/domain/entities/download_task.dart';
 import 'package:insta_reel_downloader/domain/entities/url_validation_result.dart';
@@ -18,12 +19,32 @@ final homeControllerProvider = StateNotifierProvider<HomeController, HomeState>(
 );
 
 class HomeController extends StateNotifier<HomeState> {
-  HomeController(this._ref) : super(const HomeState());
+  HomeController(this._ref) : super(const HomeState()) {
+    _initializeSharedIntent();
+  }
 
   final Ref _ref;
   Timer? _validationTimer;
+  late final SharedIntentHandler _sharedIntentHandler;
 
   DownloadRepository get _repository => _ref.read(downloadRepositoryProvider);
+
+  void _initializeSharedIntent() {
+    _sharedIntentHandler = _ref.read(sharedIntentHandlerProvider);
+    _checkSharedUrl();
+  }
+
+  Future<void> _checkSharedUrl() async {
+    try {
+      final sharedUrl = await _sharedIntentHandler.getSharedUrl();
+      if (sharedUrl != null && sharedUrl.isNotEmpty) {
+        onUrlChanged(sharedUrl);
+        await _sharedIntentHandler.clearSharedUrl();
+      }
+    } catch (_) {
+      // Continue anyway if shared intent handling fails
+    }
+  }
 
   void onUrlChanged(String url) {
     _validationTimer?.cancel();

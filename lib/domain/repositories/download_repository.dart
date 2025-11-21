@@ -22,5 +22,9 @@ abstract class DownloadRepository {
 
   Future<void> retryTask(String taskId);
 
+  Future<void> saveHistoryEntry(HistoryEntry entry);
+
+  Future<void> deleteHistoryEntry(String entryId);
+
   void dispose() {}
 }

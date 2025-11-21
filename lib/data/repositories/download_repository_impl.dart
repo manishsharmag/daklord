@@ -87,6 +87,14 @@ class DownloadRepositoryImpl implements DownloadRepository {
       _downloaderService.retryDownload(taskId);
 
   @override
+  Future<void> saveHistoryEntry(HistoryEntry entry) =>
+      _downloaderService.saveHistoryEntry(entry);
+
+  @override
+  Future<void> deleteHistoryEntry(String entryId) =>
+      _downloaderService.deleteHistoryEntry(entryId);
+
+  @override
   void dispose() {
     _taskSubscription.cancel();
     _tasksController.close();

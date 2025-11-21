@@ -22,5 +22,9 @@ abstract class DownloaderService {
 
   Future<void> retryDownload(String taskId);
 
+  Future<void> saveHistoryEntry(HistoryEntry entry);
+
+  Future<void> deleteHistoryEntry(String entryId);
+
   void dispose() {}
 }

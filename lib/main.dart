@@ -5,5 +5,9 @@ import 'package:insta_reel_downloader/presentation/app.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const ProviderScope(child: InstaReelDownloaderApp()));
+  runApp(
+    const ProviderScope(
+      child: InstaReelDownloaderApp(),
+    ),
+  );
 }

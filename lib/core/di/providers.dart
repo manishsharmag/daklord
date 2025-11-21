@@ -1,11 +1,16 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:insta_reel_downloader/data/datasources/downloader_platform_channel.dart';
+import 'package:insta_reel_downloader/data/datasources/shared_intent_channel.dart';
 import 'package:insta_reel_downloader/data/datasources/upscaler_platform_channel.dart';
 import 'package:insta_reel_downloader/data/repositories/download_repository_impl.dart';
 import 'package:insta_reel_downloader/domain/repositories/download_repository.dart';
 import 'package:insta_reel_downloader/domain/services/downloader_service.dart';
 import 'package:insta_reel_downloader/domain/services/upscaler_service.dart';
+
+final sharedIntentHandlerProvider = Provider<SharedIntentHandler>((ref) {
+  return SharedIntentHandler();
+});
 
 final downloaderServiceProvider = Provider<DownloaderService>((ref) {
   final service = DownloaderChannelService();

@@ -4,9 +4,11 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:insta_reel_downloader/core/di/providers.dart';
+import 'package:insta_reel_downloader/domain/entities/download_status.dart';
 import 'package:insta_reel_downloader/domain/entities/download_task.dart';
 import 'package:insta_reel_downloader/domain/entities/history_entry.dart';
 import 'package:insta_reel_downloader/domain/repositories/download_repository.dart';
+import 'package:insta_reel_downloader/presentation/settings/settings_view.dart';
 
 final downloadsControllerProvider =
     StateNotifierProvider<DownloadsController, DownloadsState>((ref) {
@@ -22,10 +24,16 @@ class DownloadsController extends StateNotifier<DownloadsState> {
       }
       final newlyCompleted = tasks
           .where((task) => task.isComplete && !_syncedHistoryIds.contains(task.id))
-          .map((task) => task.id)
           .toList();
       if (newlyCompleted.isNotEmpty) {
-        _syncedHistoryIds.addAll(newlyCompleted);
+        _syncedHistoryIds.addAll(newlyCompleted.map((t) => t.id));
+        final autoSave = _ref.read(autoSaveHistoryProvider);
+        final privacyMode = _ref.read(privacyModeProvider);
+        if (autoSave && !privacyMode) {
+          for (final task in newlyCompleted) {
+            await _saveTaskToHistory(task);
+          }
+        }
         await _refreshHistoryInternal();
       }
     });
@@ -37,6 +45,26 @@ class DownloadsController extends StateNotifier<DownloadsState> {
   StreamSubscription<List<DownloadTask>>? _subscription;
 
   DownloadRepository get _repository => _ref.read(downloadRepositoryProvider);
+
+  Future<void> _saveTaskToHistory(DownloadTask task) async {
+    try {
+      final entry = HistoryEntry(
+        id: task.id,
+        url: task.url,
+        completedAt: task.completedAt ?? DateTime.now(),
+        status: task.status,
+        title: task.title,
+        author: task.author,
+        thumbnailUrl: task.thumbnailUrl,
+        duration: task.duration,
+        localPath: task.localPath,
+        error: task.error,
+      );
+      await _repository.saveHistoryEntry(entry);
+    } catch (_) {
+      // Ignore save errors
+    }
+  }
 
   Future<void> _refreshHistoryInternal() async {
     try {
@@ -59,6 +87,16 @@ class DownloadsController extends StateNotifier<DownloadsState> {
   Future<void> cancelTask(String taskId) => _repository.cancelTask(taskId);
 
   Future<void> retryTask(String taskId) => _repository.retryTask(taskId);
+
+  Future<void> deleteHistoryEntry(String entryId) async {
+    try {
+      await _repository.deleteHistoryEntry(entryId);
+      await _refreshHistoryInternal();
+    } catch (_) {
+      // Error occurred, try to refresh state anyway
+      await _refreshHistoryInternal();
+    }
+  }
 
   @override
   void dispose() {

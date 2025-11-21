@@ -5,4 +5,5 @@ class ChannelNames {
   static const String downloaderEvents = 'com.insta.reel/downloader/events';
   static const String upscaler = 'com.insta.reel/upscaler';
   static const String upscalerEvents = 'com.insta.reel/upscaler/events';
+  static const String sharedIntent = 'com.insta.reel/shared_intent';
 }
