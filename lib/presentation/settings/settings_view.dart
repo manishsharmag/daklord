@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 final analyticsOptInProvider = StateProvider<bool>((ref) => true);
 final autoUpscaleProvider = StateProvider<bool>((ref) => false);
+final upscaleScaleFactorProvider = StateProvider<int>((ref) => 2);
 
 class SettingsView extends ConsumerWidget {
   const SettingsView({super.key});
@@ -12,6 +13,7 @@ class SettingsView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final analyticsOptIn = ref.watch(analyticsOptInProvider);
     final autoUpscale = ref.watch(autoUpscaleProvider);
+    final scaleFactor = ref.watch(upscaleScaleFactorProvider);
 
     return ListView(
       padding: const EdgeInsets.all(24),
@@ -27,6 +29,47 @@ class SettingsView extends ConsumerWidget {
             value: autoUpscale,
             onChanged: (value) =>
                 ref.read(autoUpscaleProvider.notifier).state = value,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.auto_awesome),
+                title: const Text('Upscaling scale factor'),
+                subtitle: Text('${scaleFactor}x resolution enhancement'),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    const Text('2x'),
+                    Expanded(
+                      child: Slider(
+                        value: scaleFactor.toDouble(),
+                        min: 2,
+                        max: 4,
+                        divisions: 1,
+                        label: '${scaleFactor}x',
+                        onChanged: (value) {
+                          ref.read(upscaleScaleFactorProvider.notifier).state =
+                              value.toInt();
+                        },
+                      ),
+                    ),
+                    const Text('4x'),
+                  ],
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Text(
+                  'Higher scale factors produce better quality but take longer to process.',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 12),
