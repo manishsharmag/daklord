@@ -34,12 +34,24 @@ class DownloadsView extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           if (state.activeTasks.isEmpty) const _EmptyDownloadsState(),
-          ...state.activeTasks.map(
-            (task) => Padding(
+          ...state.activeTasks.map((task) {
+            final isCancelable = task.status == DownloadStatus.queued ||
+                task.status == DownloadStatus.preparing ||
+                task.status == DownloadStatus.downloading;
+            final isRetryable = task.status == DownloadStatus.failed;
+            return Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: DownloadTaskTile(task: task),
-            ),
-          ),
+              child: DownloadTaskTile(
+                task: task,
+                onCancel: isCancelable
+                    ? () => controller.cancelTask(task.id)
+                    : null,
+                onRetry: isRetryable
+                    ? () => controller.retryTask(task.id)
+                    : null,
+              ),
+            );
+          }),
           const Divider(height: 48),
           _SectionHeader(
             title: 'History',
@@ -55,8 +67,21 @@ class DownloadsView extends ConsumerWidget {
               child: ListTile(
                 leading: const Icon(Icons.movie),
                 title: Text(entry.title ?? entry.url),
-                subtitle: Text(
-                  'Completed ${_timeAgo(entry.completedAt)} · ${entry.url}',
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Completed ${_timeAgo(entry.completedAt)} · '
+                      '${entry.author ?? entry.url}',
+                    ),
+                    if (entry.localPath != null)
+                      Text(
+                        entry.localPath!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                  ],
                 ),
                 trailing: Icon(
                   entry.status == DownloadStatus.completed

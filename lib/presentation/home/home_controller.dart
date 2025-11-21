@@ -1,9 +1,14 @@
+import 'dart:async';
+
 import 'package:equatable/equatable.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:insta_reel_downloader/core/di/providers.dart';
+import 'package:insta_reel_downloader/domain/entities/download_metadata.dart';
 import 'package:insta_reel_downloader/domain/entities/download_task.dart';
+import 'package:insta_reel_downloader/domain/entities/url_validation_result.dart';
+import 'package:insta_reel_downloader/domain/repositories/download_repository.dart';
 import 'package:insta_reel_downloader/presentation/shell/app_shell.dart';
 
 final homeControllerProvider = StateNotifierProvider<HomeController, HomeState>(
@@ -16,14 +21,38 @@ class HomeController extends StateNotifier<HomeState> {
   HomeController(this._ref) : super(const HomeState());
 
   final Ref _ref;
+  Timer? _validationTimer;
+
+  DownloadRepository get _repository => _ref.read(downloadRepositoryProvider);
 
   void onUrlChanged(String url) {
+    _validationTimer?.cancel();
+    final trimmed = url.trim();
     state = state.copyWith(
       url: url,
       feedback: null,
       feedbackSpecified: true,
       isError: false,
+      isValidUrl: false,
+      isCheckingUrl: trimmed.isNotEmpty,
+      validationMessage: null,
+      normalizedUrlSpecified: true,
+      normalizedUrl: null,
+      metadataSpecified: true,
+      metadata: null,
     );
+    if (trimmed.isEmpty) {
+      state = state.copyWith(
+        isCheckingUrl: false,
+        validationMessage: null,
+        metadataSpecified: true,
+        metadata: null,
+      );
+      return;
+    }
+    _validationTimer = Timer(const Duration(milliseconds: 350), () {
+      _validateUrl(trimmed);
+    });
   }
 
   Future<void> pasteFromClipboard() async {
@@ -37,8 +66,8 @@ class HomeController extends StateNotifier<HomeState> {
       );
       return;
     }
+    onUrlChanged(clipboardValue);
     state = state.copyWith(
-      url: clipboardValue,
       feedback: 'Link pasted',
       feedbackSpecified: true,
       isError: false,
@@ -51,6 +80,62 @@ class HomeController extends StateNotifier<HomeState> {
       feedbackSpecified: true,
       isError: false,
     );
+  }
+
+  Future<void> shareCurrentLink() async {
+    state = state.copyWith(
+      feedback: 'Share targets will surface once native integration lands.',
+      feedbackSpecified: true,
+      isError: false,
+    );
+  }
+
+  Future<void> _validateUrl(String url) async {
+    state = state.copyWith(isCheckingUrl: true);
+    try {
+      final UrlValidationResult validation = await _repository.validateUrl(url);
+      if (!mounted) return;
+      if (!validation.isValid || validation.normalizedUrl == null) {
+        state = state.copyWith(
+          isCheckingUrl: false,
+          isValidUrl: false,
+          validationMessage: validation.reason ?? 'Invalid reel URL',
+          metadataSpecified: true,
+          metadata: null,
+        );
+        return;
+      }
+      final normalized = validation.normalizedUrl!;
+      state = state.copyWith(
+        isCheckingUrl: false,
+        isValidUrl: true,
+        normalizedUrl: normalized,
+        validationMessage: 'Link looks valid',
+      );
+      await _hydrateMetadata(normalized);
+    } catch (_) {
+      if (!mounted) return;
+      state = state.copyWith(
+        isCheckingUrl: false,
+        isValidUrl: false,
+        validationMessage: 'Unable to verify link. Please try again.',
+        metadataSpecified: true,
+        metadata: null,
+      );
+    }
+  }
+
+  Future<void> _hydrateMetadata(String url) async {
+    try {
+      final DownloadMetadata metadata = await _repository.fetchMetadata(url);
+      if (mounted) {
+        state = state.copyWith(metadata: metadata, metadataSpecified: true);
+      }
+    } catch (_) {
+      if (mounted) {
+        state = state.copyWith(metadataSpecified: true, metadata: null);
+      }
+    }
   }
 
   Future<void> enqueueDownload() async {
@@ -68,10 +153,18 @@ class HomeController extends StateNotifier<HomeState> {
       feedbackSpecified: true,
     );
     try {
-      final repository = _ref.read(downloadRepositoryProvider);
-      final DownloadTask task = await repository.enqueueDownload(
-        state.url.trim(),
-      );
+      final granted = await _repository.ensureStorageAccess();
+      if (!granted) {
+        state = state.copyWith(
+          isSubmitting: false,
+          feedback: 'Storage permission is required to save reels.',
+          feedbackSpecified: true,
+          isError: true,
+        );
+        return;
+      }
+      final url = (state.normalizedUrl ?? state.url).trim();
+      final DownloadTask task = await _repository.enqueueDownload(url);
       state = state.copyWith(
         isSubmitting: false,
         feedback: 'Queued ${task.title ?? 'new reel'}',
@@ -88,6 +181,12 @@ class HomeController extends StateNotifier<HomeState> {
       );
     }
   }
+
+  @override
+  void dispose() {
+    _validationTimer?.cancel();
+    super.dispose();
+  }
 }
 
 class HomeState extends Equatable {
@@ -96,30 +195,63 @@ class HomeState extends Equatable {
     this.isSubmitting = false,
     this.feedback,
     this.isError = false,
+    this.isCheckingUrl = false,
+    this.isValidUrl = false,
+    this.normalizedUrl,
+    this.validationMessage,
+    this.metadata,
   });
 
   final String url;
   final bool isSubmitting;
   final String? feedback;
   final bool isError;
+  final bool isCheckingUrl;
+  final bool isValidUrl;
+  final String? normalizedUrl;
+  final String? validationMessage;
+  final DownloadMetadata? metadata;
 
-  bool get canSubmit => url.trim().isNotEmpty && !isSubmitting;
+  bool get canSubmit => isValidUrl && !isSubmitting;
 
   HomeState copyWith({
     String? url,
     bool? isSubmitting,
     String? feedback,
     bool? isError,
+    bool? isCheckingUrl,
+    bool? isValidUrl,
+    String? normalizedUrl,
+    String? validationMessage,
+    DownloadMetadata? metadata,
     bool feedbackSpecified = false,
+    bool metadataSpecified = false,
+    bool normalizedUrlSpecified = false,
   }) {
     return HomeState(
       url: url ?? this.url,
       isSubmitting: isSubmitting ?? this.isSubmitting,
       feedback: feedbackSpecified ? feedback : this.feedback,
       isError: isError ?? this.isError,
+      isCheckingUrl: isCheckingUrl ?? this.isCheckingUrl,
+      isValidUrl: isValidUrl ?? this.isValidUrl,
+      normalizedUrl:
+          normalizedUrlSpecified ? normalizedUrl : (normalizedUrl ?? this.normalizedUrl),
+      validationMessage: validationMessage ?? this.validationMessage,
+      metadata: metadataSpecified ? metadata : (metadata ?? this.metadata),
     );
   }
 
   @override
-  List<Object?> get props => [url, isSubmitting, feedback, isError];
+  List<Object?> get props => [
+        url,
+        isSubmitting,
+        feedback,
+        isError,
+        isCheckingUrl,
+        isValidUrl,
+        normalizedUrl,
+        validationMessage,
+        metadata,
+      ];
 }

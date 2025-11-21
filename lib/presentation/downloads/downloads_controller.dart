@@ -15,18 +15,30 @@ final downloadsControllerProvider =
 
 class DownloadsController extends StateNotifier<DownloadsState> {
   DownloadsController(this._ref) : super(const DownloadsState.loading()) {
-    _subscription = _repository.watchDownloads().listen((tasks) {
-      state = state.copyWith(activeTasks: tasks, isLoading: false);
+    _subscription = _repository.watchDownloads().listen((tasks) async {
+      final active = tasks.where((task) => !task.isComplete).toList();
+      if (mounted) {
+        state = state.copyWith(activeTasks: active, isLoading: false);
+      }
+      final newlyCompleted = tasks
+          .where((task) => task.isComplete && !_syncedHistoryIds.contains(task.id))
+          .map((task) => task.id)
+          .toList();
+      if (newlyCompleted.isNotEmpty) {
+        _syncedHistoryIds.addAll(newlyCompleted);
+        await _refreshHistoryInternal();
+      }
     });
-    _bootstrapHistory();
+    unawaited(_refreshHistoryInternal());
   }
 
   final Ref _ref;
+  final _syncedHistoryIds = <String>{};
   StreamSubscription<List<DownloadTask>>? _subscription;
 
   DownloadRepository get _repository => _ref.read(downloadRepositoryProvider);
 
-  Future<void> _bootstrapHistory() async {
+  Future<void> _refreshHistoryInternal() async {
     try {
       final entries = await _repository.loadHistory();
       if (mounted) {
@@ -41,8 +53,12 @@ class DownloadsController extends StateNotifier<DownloadsState> {
 
   Future<void> refreshHistory() async {
     state = state.copyWith(isLoading: true);
-    await _bootstrapHistory();
+    await _refreshHistoryInternal();
   }
+
+  Future<void> cancelTask(String taskId) => _repository.cancelTask(taskId);
+
+  Future<void> retryTask(String taskId) => _repository.retryTask(taskId);
 
   @override
   void dispose() {

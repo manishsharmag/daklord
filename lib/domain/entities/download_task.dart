@@ -10,20 +10,28 @@ class DownloadTask extends Equatable {
     required this.progress,
     required this.createdAt,
     this.title,
+    this.author,
     this.eta,
     this.completedAt,
     this.thumbnailUrl,
+    this.duration,
+    this.localPath,
+    this.error,
   });
 
   final String id;
   final String url;
   final String? title;
+  final String? author;
   final DownloadStatus status;
   final double progress;
   final Duration? eta;
   final DateTime createdAt;
   final DateTime? completedAt;
   final String? thumbnailUrl;
+  final Duration? duration;
+  final String? localPath;
+  final String? error;
 
   bool get isComplete => status == DownloadStatus.completed;
 
@@ -31,23 +39,31 @@ class DownloadTask extends Equatable {
     String? id,
     String? url,
     String? title,
+    String? author,
     DownloadStatus? status,
     double? progress,
     Duration? eta,
     DateTime? createdAt,
     DateTime? completedAt,
     String? thumbnailUrl,
+    Duration? duration,
+    String? localPath,
+    String? error,
   }) {
     return DownloadTask(
       id: id ?? this.id,
       url: url ?? this.url,
       title: title ?? this.title,
+      author: author ?? this.author,
       status: status ?? this.status,
       progress: progress ?? this.progress,
       eta: eta ?? this.eta,
       createdAt: createdAt ?? this.createdAt,
       completedAt: completedAt ?? this.completedAt,
       thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      duration: duration ?? this.duration,
+      localPath: localPath ?? this.localPath,
+      error: error ?? this.error,
     );
   }
 
@@ -55,26 +71,35 @@ class DownloadTask extends Equatable {
     'id': id,
     'url': url,
     'title': title,
+    'author': author,
     'status': status.key,
     'progress': progress,
     'etaSeconds': eta?.inSeconds,
     'createdAt': createdAt.toIso8601String(),
     'completedAt': completedAt?.toIso8601String(),
     'thumbnailUrl': thumbnailUrl,
+    'durationSeconds': duration?.inSeconds,
+    'localPath': localPath,
+    'error': error,
   };
 
   factory DownloadTask.fromMap(Map<dynamic, dynamic> map) {
     final etaSeconds = map['etaSeconds'];
+    final durationSeconds = map['durationSeconds'];
     return DownloadTask(
       id: map['id']?.toString() ?? '',
       url: map['url']?.toString() ?? '',
       title: map['title']?.toString(),
+      author: map['author']?.toString(),
       status: DownloadStatusX.fromKey(map['status']?.toString()),
       progress: _toProgress(map['progress']),
       eta: etaSeconds is num ? Duration(seconds: etaSeconds.toInt()) : null,
       createdAt: _parseDateTime(map['createdAt']) ?? DateTime.now(),
       completedAt: _parseDateTime(map['completedAt']),
       thumbnailUrl: map['thumbnailUrl']?.toString(),
+      duration: durationSeconds is num ? Duration(seconds: durationSeconds.toInt()) : null,
+      localPath: map['localPath']?.toString(),
+      error: map['error']?.toString(),
     );
   }
 
@@ -105,11 +130,15 @@ class DownloadTask extends Equatable {
     id,
     url,
     title,
+    author,
     status,
     progress,
     eta,
     createdAt,
     completedAt,
     thumbnailUrl,
+    duration,
+    localPath,
+    error,
   ];
 }

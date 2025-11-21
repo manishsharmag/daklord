@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import '../../domain/entities/download_metadata.dart';
 import '../../domain/entities/download_task.dart';
 import '../../domain/entities/history_entry.dart';
+import '../../domain/entities/url_validation_result.dart';
 import '../../domain/repositories/download_repository.dart';
 import '../../domain/services/downloader_service.dart';
 import '../../domain/services/upscaler_service.dart';
@@ -13,6 +15,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
   }) : _downloaderService = downloaderService,
        _upscalerService = upscalerService {
     _tasksController.add(const <DownloadTask>[]);
+    unawaited(_primeActiveTasks());
     _taskSubscription = _downloaderService.observeTasks().listen(_handleTask);
   }
 
@@ -22,6 +25,18 @@ class DownloadRepositoryImpl implements DownloadRepository {
   final _tasksController = StreamController<List<DownloadTask>>.broadcast();
   late final StreamSubscription<DownloadTask> _taskSubscription;
 
+  Future<void> _primeActiveTasks() async {
+    try {
+      final tasks = await _downloaderService.loadActiveTasks();
+      if (tasks.isEmpty) return;
+      for (final task in tasks) {
+        _handleTask(task);
+      }
+    } catch (_) {
+      // Native bootstrapping is best-effort.
+    }
+  }
+
   void _handleTask(DownloadTask task) {
     final index = _tasks.indexWhere((element) => element.id == task.id);
     if (index == -1) {
@@ -29,6 +44,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
     } else {
       _tasks[index] = task;
     }
+    _tasks.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     _tasksController.add(List.unmodifiable(_tasks));
   }
 
@@ -47,6 +63,26 @@ class DownloadRepositoryImpl implements DownloadRepository {
   @override
   Future<void> upscaleTask(String taskId) =>
       _upscalerService.upscaleVideo(taskId);
+
+  @override
+  Future<UrlValidationResult> validateUrl(String url) =>
+      _downloaderService.validateUrl(url);
+
+  @override
+  Future<DownloadMetadata> fetchMetadata(String url) =>
+      _downloaderService.extractMetadata(url);
+
+  @override
+  Future<bool> ensureStorageAccess() =>
+      _downloaderService.ensureStorageAccess();
+
+  @override
+  Future<void> cancelTask(String taskId) =>
+      _downloaderService.cancelDownload(taskId);
+
+  @override
+  Future<void> retryTask(String taskId) =>
+      _downloaderService.retryDownload(taskId);
 
   @override
   void dispose() {

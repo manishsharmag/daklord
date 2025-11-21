@@ -9,17 +9,23 @@ class HistoryEntry extends Equatable {
     required this.completedAt,
     required this.status,
     this.title,
+    this.author,
     this.thumbnailUrl,
     this.duration,
+    this.localPath,
+    this.error,
   });
 
   final String id;
   final String url;
   final String? title;
+  final String? author;
   final DateTime completedAt;
   final DownloadStatus status;
   final String? thumbnailUrl;
   final Duration? duration;
+  final String? localPath;
+  final String? error;
 
   factory HistoryEntry.fromMap(Map<dynamic, dynamic> map) {
     final durationSeconds = map['durationSeconds'];
@@ -27,12 +33,15 @@ class HistoryEntry extends Equatable {
       id: map['id']?.toString() ?? '',
       url: map['url']?.toString() ?? '',
       title: map['title']?.toString(),
+      author: map['author']?.toString(),
       completedAt: _parseDateTime(map['completedAt']) ?? DateTime.now(),
       status: DownloadStatusX.fromKey(map['status']?.toString()),
       thumbnailUrl: map['thumbnailUrl']?.toString(),
       duration: durationSeconds is num
           ? Duration(seconds: durationSeconds.toInt())
           : null,
+      localPath: map['localPath']?.toString(),
+      error: map['error']?.toString(),
     );
   }
 
@@ -52,10 +61,13 @@ class HistoryEntry extends Equatable {
     'id': id,
     'url': url,
     'title': title,
+    'author': author,
     'completedAt': completedAt.toIso8601String(),
     'status': status.key,
     'thumbnailUrl': thumbnailUrl,
     'durationSeconds': duration?.inSeconds,
+    'localPath': localPath,
+    'error': error,
   };
 
   @override
@@ -63,9 +75,12 @@ class HistoryEntry extends Equatable {
     id,
     url,
     title,
+    author,
     completedAt,
     status,
     thumbnailUrl,
     duration,
+    localPath,
+    error,
   ];
 }
