@@ -19,7 +19,7 @@ Successfully integrated Real-ESRGAN for on-device video upscaling with NNAPI/GPU
    - Manages lifecycle (dispose on destroy)
 
 3. **build.gradle.kts** - Added dependencies
-   - TensorFlow Lite 2.14.0
+   - TensorFlow Lite 2.13.0
    - TensorFlow Lite GPU delegate
    - TensorFlow Lite Support library
    - NDK ABI filters for native libraries
@@ -156,7 +156,7 @@ With a proper Real-ESRGAN model and GPU acceleration:
 ## Technical Notes
 
 - Minimum Android SDK: 24 (Android 7.0)
-- TensorFlow Lite version: 2.14.0
+- TensorFlow Lite version: 2.13.0
 - FFmpeg used for video I/O (already integrated)
 - Model format: TFLite fp16 (half-precision floating point)
 - Thread count: 4 for CPU operations

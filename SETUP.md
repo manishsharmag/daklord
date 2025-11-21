@@ -175,9 +175,9 @@ The `BinaryBootstrapper` class handles runtime extraction and execution.
 ## TensorFlow Lite Integration
 
 The upscaling feature uses TensorFlow Lite with:
-- **org.tensorflow:tensorflow-lite:2.14.0** - Core inference engine
-- **org.tensorflow:tensorflow-lite-gpu:2.14.0** - GPU acceleration
-- **org.tensorflow:tensorflow-lite-nnapi:2.14.0** - NNAPI acceleration
+- **org.tensorflow:tensorflow-lite:2.13.0** - Core inference engine
+- **org.tensorflow:tensorflow-lite-gpu:2.13.0** - GPU acceleration
+- **org.tensorflow:tensorflow-lite-nnapi:2.13.0** - NNAPI acceleration
 - **org.tensorflow:tensorflow-lite-support:0.4.4** - Helper utilities
 
 The model file should be placed at:
