@@ -1,0 +1,3 @@
+# Placeholder for Real-ESRGAN TFLite model
+# Place the actual esrgan_fp16.tflite file in this directory
+# The upscaler will fall back to bicubic upscaling if this model is not found

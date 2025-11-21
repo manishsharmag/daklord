@@ -61,8 +61,10 @@ class DownloadRepositoryImpl implements DownloadRepository {
   Future<List<HistoryEntry>> loadHistory() => _downloaderService.loadHistory();
 
   @override
-  Future<void> upscaleTask(String taskId) =>
-      _upscalerService.upscaleVideo(taskId);
+  Future<void> upscaleTask(String taskId) async {
+    // This method is deprecated - upscaling now handled directly via UpscaleController
+    // Keeping for backward compatibility but marking as no-op
+  }
 
   @override
   Future<UrlValidationResult> validateUrl(String url) =>

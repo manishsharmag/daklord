@@ -6,20 +6,15 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private lateinit var downloaderBridge: DownloaderBridge
+    private lateinit var upscalerBridge: UpscalerBridge
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         downloaderBridge = DownloaderBridge(this)
         downloaderBridge.start(flutterEngine)
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UPSCALER_CHANNEL)
-            .setMethodCallHandler { call, result ->
-                if (call.method == "upscaleVideo") {
-                    result.success(null)
-                } else {
-                    result.notImplemented()
-                }
-            }
+        upscalerBridge = UpscalerBridge(this)
+        upscalerBridge.start(flutterEngine)
     }
 
     override fun onRequestPermissionsResult(
@@ -39,10 +34,9 @@ class MainActivity : FlutterActivity() {
         if (this::downloaderBridge.isInitialized) {
             downloaderBridge.dispose()
         }
+        if (this::upscalerBridge.isInitialized) {
+            upscalerBridge.dispose()
+        }
         super.onDestroy()
-    }
-
-    companion object {
-        private const val UPSCALER_CHANNEL = "com.insta.reel/upscaler"
     }
 }
