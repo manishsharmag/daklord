@@ -556,71 +556,102 @@ class ScopedDownloadPipeline(
         onProgress: (Double, Int) -> Unit,
     ): File = withContext(Dispatchers.IO) {
         val baseDir = resolveDownloadDir(downloadFolder)
+        android.util.Log.d("DownloadPipeline", "Base directory: ${baseDir.absolutePath}")
+
         if (!baseDir.exists()) {
-            baseDir.mkdirs()
-        }
-        val authorDir = authorDirectory(baseDir, metadata.author)
-        if (!authorDir.exists()) {
-            authorDir.mkdirs()
+            val created = baseDir.mkdirs()
+            if (!created && !baseDir.exists()) {
+                throw IOException("Failed to create download directory: ${baseDir.absolutePath}")
+            }
+            android.util.Log.d("DownloadPipeline", "Created base directory")
         }
 
-        val safeTitle = metadata.title.replace(Regex("[^A-Za-z0-9_-]"), "_")
-        val tempOutput = File(authorDir, "${safeTitle}_${taskId.take(6)}_temp.mp4")
-        val finalOutput = File(authorDir, "${safeTitle}_${taskId.take(6)}.mp4")
+        if (!baseDir.isDirectory) {
+            throw IOException("Download path is not a directory: ${baseDir.absolutePath}")
+        }
+
+        verifyDirectoryWritable(baseDir)
+
+        val safeTitle = sanitizeFilename(metadata.title)
+        val timestamp = currentTimestampToken()
+        val baseFileName = "${safeTitle}_$timestamp"
+        val finalOutput = ensureUniqueOutputFile(baseDir, baseFileName)
+        val tempOutput = File(baseDir, "${finalOutput.nameWithoutExtension}_temp.mp4")
+
+        android.util.Log.d("DownloadPipeline", "Original title: '${metadata.title}'")
+        android.util.Log.d("DownloadPipeline", "Sanitized title: '$safeTitle'")
+        android.util.Log.d("DownloadPipeline", "Timestamp: $timestamp")
+        android.util.Log.d("DownloadPipeline", "Final output (unique): ${finalOutput.absolutePath}")
+        android.util.Log.d("DownloadPipeline", "Temp output: ${tempOutput.absolutePath}")
+
         if (tempOutput.exists()) tempOutput.delete()
 
         var lastError: String? = null
 
+        android.util.Log.d("DownloadPipeline", "Starting yt-dlp download")
         val ytResult = downloadWithYtDlp(metadata.url, tempOutput, onProgress)
         if (!ytResult.success) {
             lastError = ytResult.error ?: lastError
+            android.util.Log.e("DownloadPipeline", "yt-dlp failed: $lastError")
         }
+        
         if (tempOutput.exists() && tempOutput.length() > 0) {
-            val encoded = encodeWithFfmpeg(tempOutput, finalOutput)
-            tempOutput.delete()
-            if (encoded && finalOutput.exists()) {
+            android.util.Log.d("DownloadPipeline", "yt-dlp downloaded file size: ${tempOutput.length()} bytes")
+            val encodeResult = encodeWithFfmpeg(tempOutput, finalOutput)
+            
+            if (encodeResult.success && finalOutput.exists() && finalOutput.length() > 0) {
+                android.util.Log.d("DownloadPipeline", "FFmpeg encoding successful. Final size: ${finalOutput.length()} bytes")
+                tempOutput.delete()
                 return@withContext finalOutput
+            } else {
+                android.util.Log.e("DownloadPipeline", "FFmpeg encoding failed: ${encodeResult.error}")
+                lastError = encodeResult.error ?: "Failed to optimize downloaded reel"
             }
-            lastError = "Failed to optimize downloaded reel"
+            tempOutput.delete()
         }
 
+        android.util.Log.d("DownloadPipeline", "Trying direct download method")
         tempOutput.delete()
         val directUrl = metadata.directDownloadUrl
         if (!directUrl.isNullOrBlank()) {
+            android.util.Log.d("DownloadPipeline", "Direct URL: $directUrl")
             val directResult = downloadDirect(directUrl, tempOutput, onProgress)
             if (!directResult.success) {
                 lastError = directResult.error ?: lastError
+                android.util.Log.e("DownloadPipeline", "Direct download failed: $lastError")
             } else if (tempOutput.exists() && tempOutput.length() > 0) {
-                val encoded = encodeWithFfmpeg(tempOutput, finalOutput)
-                tempOutput.delete()
-                if (encoded && finalOutput.exists()) {
+                android.util.Log.d("DownloadPipeline", "Direct download successful, size: ${tempOutput.length()} bytes")
+                val encodeResult = encodeWithFfmpeg(tempOutput, finalOutput)
+                
+                if (encodeResult.success && finalOutput.exists() && finalOutput.length() > 0) {
+                    android.util.Log.d("DownloadPipeline", "FFmpeg encoding successful. Final size: ${finalOutput.length()} bytes")
+                    tempOutput.delete()
                     return@withContext finalOutput
+                } else {
+                    android.util.Log.e("DownloadPipeline", "FFmpeg encoding failed: ${encodeResult.error}")
+                    lastError = encodeResult.error ?: "Failed to optimize direct reel stream"
                 }
-                lastError = "Failed to optimize direct reel stream"
+                tempOutput.delete()
             } else {
+                android.util.Log.e("DownloadPipeline", "Direct download created no file")
                 tempOutput.delete()
             }
         }
 
         tempOutput.delete()
+        android.util.Log.e("DownloadPipeline", "All download methods failed. Last error: $lastError")
         throw IOException(lastError ?: "Instagram download failed. Please try again.")
     }
 
     private fun resolveDownloadDir(downloadFolder: String?): File {
         return if (!downloadFolder.isNullOrBlank()) {
-            File(downloadFolder)
+            File(downloadFolder.trim()).absoluteFile
         } else {
             File(
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
                 "instagram-reels"
             )
         }
-    }
-
-    private fun authorDirectory(baseDir: File, author: String?): File {
-        val rawAuthor = author?.removePrefix("@").orEmpty().ifBlank { "instagram" }
-        val safeAuthor = rawAuthor.lowercase(Locale.US).replace(Regex("[^a-z0-9_-]"), "_")
-        return File(baseDir, safeAuthor)
     }
 
     private fun downloadWithYtDlp(url: String, output: File, onProgress: (Double, Int) -> Unit): DownloadAttempt {
@@ -710,8 +741,20 @@ class ScopedDownloadPipeline(
         }
     }
 
-    private fun encodeWithFfmpeg(input: File, output: File): Boolean {
+    private fun encodeWithFfmpeg(input: File, output: File): EncodingResult {
         return try {
+            if (!input.exists()) {
+                android.util.Log.e("DownloadPipeline", "FFmpeg input file does not exist: ${input.absolutePath}")
+                return EncodingResult(false, "Input file not found")
+            }
+            
+            if (input.length() == 0L) {
+                android.util.Log.e("DownloadPipeline", "FFmpeg input file is empty: ${input.absolutePath}")
+                return EncodingResult(false, "Input file is empty")
+            }
+            
+            android.util.Log.d("DownloadPipeline", "Starting FFmpeg encoding: ${input.absolutePath} -> ${output.absolutePath}")
+            
             val binary = bootstrapper.ensureExecutable(BinaryAsset.FFMPEG)
             val process = ProcessBuilder(
                 binary.absolutePath,
@@ -728,10 +771,48 @@ class ScopedDownloadPipeline(
                 .redirectErrorStream(true)
                 .start()
 
-            val finished = process.waitFor(180, TimeUnit.SECONDS)
-            finished && process.exitValue() == 0 && output.exists()
+            val outputLines = mutableListOf<String>()
+            val reader = process.inputStream.bufferedReader()
+            var line: String?
+            while (reader.readLine().also { line = it } != null) {
+                outputLines.add(line ?: "")
+                if (outputLines.size <= 50) {
+                    android.util.Log.d("DownloadPipeline", "FFmpeg: ${line}")
+                }
+            }
+
+            val finished = process.waitFor(300, TimeUnit.SECONDS)
+            
+            if (!finished) {
+                process.destroy()
+                android.util.Log.e("DownloadPipeline", "FFmpeg timeout after 300 seconds")
+                return EncodingResult(false, "FFmpeg timeout (processing took too long)")
+            }
+            
+            val exitCode = process.exitValue()
+            android.util.Log.d("DownloadPipeline", "FFmpeg exit code: $exitCode")
+            
+            if (exitCode != 0) {
+                val errorDetails = outputLines.takeLast(5).joinToString("\n")
+                android.util.Log.e("DownloadPipeline", "FFmpeg failed with exit code $exitCode. Last lines:\n$errorDetails")
+                return EncodingResult(false, "FFmpeg encoding failed (exit code: $exitCode)")
+            }
+            
+            if (!output.exists()) {
+                android.util.Log.e("DownloadPipeline", "FFmpeg completed but output file not created")
+                return EncodingResult(false, "Output file was not created")
+            }
+            
+            if (output.length() == 0L) {
+                android.util.Log.e("DownloadPipeline", "FFmpeg completed but output file is empty")
+                return EncodingResult(false, "Output file is empty")
+            }
+            
+            android.util.Log.d("DownloadPipeline", "FFmpeg encoding successful. Output size: ${output.length()} bytes")
+            EncodingResult(true, null)
         } catch (error: Exception) {
-            false
+            android.util.Log.e("DownloadPipeline", "FFmpeg exception: ${error.message}", error)
+            EncodingResult(false, "FFmpeg error: ${error.message}")
         }
     }
 
@@ -749,7 +830,63 @@ class ScopedDownloadPipeline(
         }
     }
 
+    private fun verifyDirectoryWritable(dir: File) {
+        try {
+            val testFile = File(dir, ".write_test_${System.currentTimeMillis()}")
+            testFile.createNewFile()
+            if (testFile.exists()) {
+                testFile.delete()
+            } else {
+                throw IOException("Cannot write to directory")
+            }
+        } catch (error: Exception) {
+            android.util.Log.e("DownloadPipeline", "Directory not writable: ${dir.absolutePath}", error)
+            throw IOException("Cannot write to directory: ${dir.absolutePath}. Check permissions.")
+        }
+    }
+
+    private fun currentTimestampToken(): String {
+        val now = System.currentTimeMillis()
+        return java.text.SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(now)
+    }
+
+    private fun ensureUniqueOutputFile(dir: File, baseName: String): File {
+        var file = File(dir, "$baseName.mp4")
+        var counter = 1
+        while (file.exists() && counter < 1000) {
+            file = File(dir, "${baseName}_$counter.mp4")
+            counter++
+        }
+        return file
+    }
+
+    private fun sanitizeFilename(title: String?): String {
+        val fallback = "Instagram_Reel"
+        val rawTitle = title?.trim().orEmpty()
+        if (rawTitle.isEmpty()) return fallback
+
+        val normalized = java.text.Normalizer.normalize(rawTitle, java.text.Normalizer.Form.NFKD)
+        var sanitized = normalized
+            .replace(Regex("\\p{M}+"), "")
+            .replace(Regex("[^A-Za-z0-9 _-]"), "_")
+            .replace(Regex("\\s+"), "_")
+            .replace(Regex("_+"), "_")
+            .trim('_')
+
+        if (sanitized.isEmpty()) {
+            sanitized = fallback
+        }
+
+        if (sanitized.length > 80) {
+            sanitized = sanitized.substring(0, 80)
+        }
+
+        return sanitized
+    }
+
     private data class DownloadAttempt(val success: Boolean, val error: String?)
+    
+    private data class EncodingResult(val success: Boolean, val error: String?)
 
     companion object {
         private val PROGRESS_PATTERN = Regex("\\[(download|ffmpeg)\\]\\s+([0-9.]+)%")
