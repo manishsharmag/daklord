@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:equatable/equatable.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:open_file/open_file.dart';
 
 import 'package:insta_reel_downloader/core/di/providers.dart';
 import 'package:insta_reel_downloader/data/providers/settings_providers.dart';
@@ -94,6 +96,32 @@ class DownloadsController extends StateNotifier<DownloadsState> {
     } catch (_) {
       // Error occurred, try to refresh state anyway
       await _refreshHistoryInternal();
+    }
+  }
+
+  Future<void> openFile(String filePath) async {
+    final file = File(filePath);
+    if (!file.existsSync()) {
+      throw Exception('File not found: $filePath');
+    }
+    
+    final result = await OpenFile.open(filePath);
+    if (result.type != ResultType.done) {
+      throw Exception(result.message ?? 'Could not open file');
+    }
+  }
+
+  Future<void> openFileManager(String filePath) async {
+    final file = File(filePath);
+    if (!file.existsSync()) {
+      throw Exception('File not found: $filePath');
+    }
+    
+    // Open the parent directory
+    final directory = file.parent.path;
+    final result = await OpenFile.open(directory);
+    if (result.type != ResultType.done) {
+      throw Exception(result.message ?? 'Could not open directory');
     }
   }
 

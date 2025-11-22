@@ -70,6 +70,17 @@ class DownloadTaskTile extends StatelessWidget {
               const SizedBox(height: 4),
               Text('Duration · ${_formatDuration(task.duration!)}'),
             ],
+            if (task.localPath != null && task.localPath!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Saving to: ${task.localPath}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontFamily: 'monospace',
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
             if (task.error != null && task.error!.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
