@@ -9,28 +9,24 @@ class PermissionService {
       return true;
     }
 
-    // For Android, try to request storage permission
-    // The permission_handler package will handle API level differences automatically
     try {
-      final storageStatus = await Permission.storage.status;
-      if (storageStatus.isGranted) {
+      // For Android 13+ (API 33+), request READ_MEDIA_* permissions
+      final permissions = <Permission>[
+        Permission.storage,
+        Permission.photos,
+        Permission.videos,
+      ];
+      
+      final statuses = await permissions.request();
+      
+      // Check if at least one permission is granted
+      final anyGranted = statuses.values.any((status) => status.isGranted);
+      if (anyGranted) {
         return true;
       }
       
-      // Try requesting storage permission
-      final result = await Permission.storage.request();
-      if (result.isGranted) {
-        return true;
-      }
-      
-      // For Android 11+, we may need MANAGE_EXTERNAL_STORAGE for full access
-      // But for Documents folder, storage permission should suffice
-      if (result.isPermanentlyDenied) {
-        // Permission permanently denied, user needs to go to settings
-        return false;
-      }
-      
-      return result.isGranted;
+      // If permanently denied, user needs to go to settings
+      return statuses.values.every((status) => !status.isPermanentlyDenied);
     } catch (e) {
       // If permission request fails, assume we have permission
       // (API might not be available on this Android version)
@@ -44,7 +40,9 @@ class PermissionService {
     }
     
     try {
-      return await Permission.storage.isGranted;
+      // Check if storage permission is granted
+      final status = await Permission.storage.status;
+      return status.isGranted;
     } catch (e) {
       return true;
     }

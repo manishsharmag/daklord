@@ -89,11 +89,14 @@ class DownloaderChannelService implements DownloaderService {
   }
 
   @override
-  Future<DownloadTask> queueDownload(String url) async {
+  Future<DownloadTask> queueDownload(String url, {String? downloadFolder}) async {
     try {
       final payload = await _channel.invokeMapMethod<String, dynamic>(
         'queueDownload',
-        {'url': url},
+        {
+          'url': url,
+          if (downloadFolder != null) 'downloadFolder': downloadFolder,
+        },
       );
       if (payload != null) {
         final task = DownloadTask.fromMap(payload);

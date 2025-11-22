@@ -14,6 +14,8 @@ class SettingsView extends ConsumerWidget {
     final scaleFactor = ref.watch(upscaleScaleFactorProvider);
     final autoSaveHistory = ref.watch(autoSaveHistoryProvider);
     final privacyMode = ref.watch(privacyModeProvider);
+    final downloadsFolderOption = ref.watch(downloadsFolderOptionProvider);
+    final downloadsFolderPath = ref.watch(downloadsFolderPathProvider);
 
     return ListView(
       padding: const EdgeInsets.all(24),
@@ -114,22 +116,76 @@ class SettingsView extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
         Card(
-          child: ListTile(
-            leading: const Icon(Icons.folder),
-            title: const Text('Scoped storage directory'),
-            subtitle: const Text('Android/media/com.insta.reel/Downloads'),
-            trailing: FilledButton.tonalIcon(
-              icon: const Icon(Icons.copy),
-              label: const Text('Copy path'),
-              onPressed: () async {
-                const path = 'Android/media/com.insta.reel/Downloads';
-                await Clipboard.setData(const ClipboardData(text: path));
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Path copied to clipboard')),
-                  );
-                }
-              },
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.folder_open),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Downloads Folder',
+                            style: TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            downloadsFolderPath,
+                            style: Theme.of(context).textTheme.labelSmall,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    FilledButton.tonalIcon(
+                      icon: const Icon(Icons.copy),
+                      label: const Text('Copy'),
+                      onPressed: () async {
+                        await Clipboard.setData(ClipboardData(text: downloadsFolderPath));
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Path copied to clipboard')),
+                          );
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Column(
+                  children: [
+                    RadioListTile<String>(
+                      title: const Text('Downloads folder directly'),
+                      subtitle: const Text('/storage/emulated/0/Downloads/'),
+                      value: 'downloads_root',
+                      groupValue: downloadsFolderOption,
+                      onChanged: (value) {
+                        if (value != null) {
+                          ref.read(downloadsFolderOptionProvider.notifier).state = value;
+                        }
+                      },
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    RadioListTile<String>(
+                      title: const Text('Instagram Reels subfolder'),
+                      subtitle: const Text('/storage/emulated/0/Downloads/instagram-reels/'),
+                      value: 'downloads_instagram_reels',
+                      groupValue: downloadsFolderOption,
+                      onChanged: (value) {
+                        if (value != null) {
+                          ref.read(downloadsFolderOptionProvider.notifier).state = value;
+                        }
+                      },
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ),
