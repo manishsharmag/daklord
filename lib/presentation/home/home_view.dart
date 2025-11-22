@@ -106,6 +106,63 @@ class _HomeViewState extends ConsumerState<HomeView> {
                     _MetadataPreview(metadata: state.metadata!),
                   ],
                   const SizedBox(height: 16),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.auto_awesome,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'AI Upscaling',
+                                      style: Theme.of(context).textTheme.titleMedium,
+                                    ),
+                                    Text(
+                                      'Enhance video quality with Real-ESRGAN',
+                                      style: Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Switch(
+                                value: state.upscaleEnabled,
+                                onChanged: homeController.toggleUpscale,
+                              ),
+                            ],
+                          ),
+                          if (state.upscaleEnabled) ...[
+                            const SizedBox(height: 16),
+                            Text(
+                              'Scale Factor',
+                              style: Theme.of(context).textTheme.titleSmall,
+                            ),
+                            const SizedBox(height: 8),
+                            SegmentedButton<int>(
+                              segments: const [
+                                ButtonSegment(value: 2, label: Text('2x')),
+                                ButtonSegment(value: 4, label: Text('4x')),
+                              ],
+                              selected: {state.scaleFactor},
+                              onSelectionChanged: (Set<int> selected) {
+                                homeController.setScaleFactor(selected.first);
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   Wrap(
                     spacing: 12,
                     runSpacing: 12,
@@ -133,7 +190,9 @@ class _HomeViewState extends ConsumerState<HomeView> {
                         label: Text(
                           state.isSubmitting
                               ? 'Queuing download'
-                              : 'Download reel',
+                              : state.upscaleEnabled
+                                  ? 'Download & Upscale ${state.scaleFactor}x'
+                                  : 'Download reel',
                         ),
                         onPressed: state.canSubmit && !state.isSubmitting
                             ? homeController.enqueueDownload
@@ -191,13 +250,35 @@ class _MetadataPreview extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            CircleAvatar(
-              backgroundColor: theme.colorScheme.primaryContainer,
-              child: Icon(
-                Icons.movie,
-                color: theme.colorScheme.onPrimaryContainer,
+            if (metadata.thumbnailUrl != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  metadata.thumbnailUrl!,
+                  width: 60,
+                  height: 60,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      width: 60,
+                      height: 60,
+                      color: theme.colorScheme.primaryContainer,
+                      child: Icon(
+                        Icons.movie,
+                        color: theme.colorScheme.onPrimaryContainer,
+                      ),
+                    );
+                  },
+                ),
+              )
+            else
+              CircleAvatar(
+                backgroundColor: theme.colorScheme.primaryContainer,
+                child: Icon(
+                  Icons.movie,
+                  color: theme.colorScheme.onPrimaryContainer,
+                ),
               ),
-            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(

@@ -197,6 +197,14 @@ class HomeController extends StateNotifier<HomeState> {
     }
   }
 
+  void toggleUpscale(bool enabled) {
+    state = state.copyWith(upscaleEnabled: enabled);
+  }
+
+  void setScaleFactor(int factor) {
+    state = state.copyWith(scaleFactor: factor);
+  }
+
   @override
   void dispose() {
     _validationTimer?.cancel();
@@ -215,6 +223,8 @@ class HomeState extends Equatable {
     this.normalizedUrl,
     this.validationMessage,
     this.metadata,
+    this.upscaleEnabled = false,
+    this.scaleFactor = 2,
   });
 
   final String url;
@@ -226,6 +236,8 @@ class HomeState extends Equatable {
   final String? normalizedUrl;
   final String? validationMessage;
   final DownloadMetadata? metadata;
+  final bool upscaleEnabled;
+  final int scaleFactor;
 
   bool get canSubmit => isValidUrl && !isSubmitting;
 
@@ -239,6 +251,8 @@ class HomeState extends Equatable {
     String? normalizedUrl,
     String? validationMessage,
     DownloadMetadata? metadata,
+    bool? upscaleEnabled,
+    int? scaleFactor,
     bool feedbackSpecified = false,
     bool metadataSpecified = false,
     bool normalizedUrlSpecified = false,
@@ -257,6 +271,8 @@ class HomeState extends Equatable {
           ? validationMessage
           : (validationMessage ?? this.validationMessage),
       metadata: metadataSpecified ? metadata : (metadata ?? this.metadata),
+      upscaleEnabled: upscaleEnabled ?? this.upscaleEnabled,
+      scaleFactor: scaleFactor ?? this.scaleFactor,
     );
   }
 
@@ -271,5 +287,7 @@ class HomeState extends Equatable {
         normalizedUrl,
         validationMessage,
         metadata,
+        upscaleEnabled,
+        scaleFactor,
       ];
 }

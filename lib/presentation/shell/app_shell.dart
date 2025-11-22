@@ -1,14 +1,55 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:insta_reel_downloader/data/datasources/permission_service.dart';
 import 'package:insta_reel_downloader/presentation/downloads/downloads_view.dart';
 import 'package:insta_reel_downloader/presentation/home/home_view.dart';
 import 'package:insta_reel_downloader/presentation/settings/settings_view.dart';
 
 final navigationIndexProvider = StateProvider<int>((ref) => 0);
 
-class AppShell extends ConsumerWidget {
+class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
+
+  @override
+  ConsumerState<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<AppShell> {
+  final _permissionService = PermissionService();
+  bool _permissionsRequested = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _requestPermissions();
+    });
+  }
+
+  Future<void> _requestPermissions() async {
+    if (_permissionsRequested) return;
+    _permissionsRequested = true;
+
+    final granted = await _permissionService.requestStoragePermission();
+    if (!granted && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Storage permission is required to download videos. '
+            'You can grant it in Settings.',
+          ),
+          action: SnackBarAction(
+            label: 'Settings',
+            onPressed: () {
+              _permissionService.openSettings();
+            },
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
 
   static final _destinations = <_NavDestination>[
     const _NavDestination(

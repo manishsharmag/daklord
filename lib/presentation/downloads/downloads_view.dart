@@ -218,9 +218,48 @@ class DownloadsView extends ConsumerWidget {
                       entry.status == DownloadStatus.completed)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
+                          FilledButton.icon(
+                            onPressed: () async {
+                              try {
+                                await controller.openFile(entry.localPath!);
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Error opening file: ${e.toString()}'),
+                                      backgroundColor:
+                                          Theme.of(context).colorScheme.error,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            icon: const Icon(Icons.play_arrow),
+                            label: const Text('Open File'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: () async {
+                              try {
+                                await controller.openFileManager(entry.localPath!);
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Error: ${e.toString()}'),
+                                      backgroundColor:
+                                          Theme.of(context).colorScheme.error,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            icon: const Icon(Icons.folder_open),
+                            label: const Text('Browse'),
+                          ),
                           FilledButton.tonalIcon(
                             onPressed: () async {
                               try {
