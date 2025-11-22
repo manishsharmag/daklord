@@ -3,7 +3,6 @@ package com.example.insta_reel_downloader
 import android.Manifest
 import android.content.Context
 import android.content.SharedPreferences
-import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.Handler
@@ -15,26 +14,21 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.io.IOException
-import java.io.InputStream
-import java.security.SecureRandom
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 import kotlin.math.absoluteValue
 import kotlin.math.max
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -52,10 +46,19 @@ class DownloaderBridge(private val activity: FlutterActivity) :
     private lateinit var eventChannel: EventChannel
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val validator = ReelUrlValidator()
+    private val httpClient = OkHttpClient.Builder()
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .callTimeout(45, TimeUnit.SECONDS)
+        .build()
+    private val urlResolver = InstagramUrlResolver(httpClient)
+    private val validator = ReelUrlValidator(urlResolver)
     private val bootstrapper = BinaryBootstrapper(activity.applicationContext)
-    private val metadataExtractor = YtDlpMetadataExtractor(bootstrapper)
-    private val downloadPipeline = ScopedDownloadPipeline(activity.applicationContext, bootstrapper)
+    private val graphqlClient = InstagramGraphqlClient(httpClient, urlResolver)
+    private val metadataExtractor = YtDlpMetadataExtractor(bootstrapper, graphqlClient)
+    private val downloadPipeline = ScopedDownloadPipeline(bootstrapper, httpClient)
     private val historyStore = DownloadHistoryStore(activity.applicationContext)
     private val permissionHelper = StoragePermissionHelper(activity)
     private val tasks = ConcurrentHashMap<String, NativeDownloadTask>()
@@ -104,8 +107,14 @@ class DownloaderBridge(private val activity: FlutterActivity) :
 
     private fun handleValidate(call: MethodCall, result: MethodChannel.Result) {
         val url = call.argument<String>("url").orEmpty()
-        val validation = validator.validate(url)
-        replySuccess(result, validation.toMap())
+        scope.launch {
+            try {
+                val validation = validator.validate(url)
+                replySuccess(result, validation.toMap())
+            } catch (error: Throwable) {
+                replyError(result, "validation_error", error.message ?: "Unable to validate URL")
+            }
+        }
     }
 
     private fun handleMetadata(call: MethodCall, result: MethodChannel.Result) {
@@ -171,27 +180,29 @@ class DownloaderBridge(private val activity: FlutterActivity) :
             return
         }
         scope.launch {
-            val reset = existing.copy(
-                status = NativeTaskStatus.QUEUED,
-                progress = 0.0,
-                etaSeconds = null,
-                completedAt = null,
-                localPath = null,
-                error = null,
-            )
-            tasks[taskId] = reset
-            emit(reset)
-            val metadata = ReelMetadata(
-                url = reset.url,
-                title = reset.title,
-                author = reset.author ?: "instagram",
-                durationSeconds = reset.durationSeconds ?: 45,
-                thumbnailUrl = reset.thumbnailUrl,
-                width = reset.width,
-                height = reset.height,
-            )
-            scheduleDownload(reset, metadata, downloadFolder)
-            replySuccess(result, reset.toMap())
+            try {
+                val metadata = metadataExtractor.extract(existing.url)
+                val reset = existing.copy(
+                    title = metadata.title,
+                    author = metadata.author,
+                    thumbnailUrl = metadata.thumbnailUrl,
+                    durationSeconds = metadata.durationSeconds,
+                    width = metadata.width,
+                    height = metadata.height,
+                    status = NativeTaskStatus.QUEUED,
+                    progress = 0.0,
+                    etaSeconds = null,
+                    completedAt = null,
+                    localPath = null,
+                    error = null,
+                )
+                tasks[taskId] = reset
+                emit(reset)
+                scheduleDownload(reset, metadata, downloadFolder)
+                replySuccess(result, reset.toMap())
+            } catch (error: Throwable) {
+                replyError(result, "retry_error", error.message ?: "Unable to retry download")
+            }
         }
     }
 
@@ -309,30 +320,18 @@ data class ValidationResult(
     )
 }
 
-class ReelUrlValidator {
-    private val pattern = Pattern.compile("^(https?://)?(www\\.)?instagram.com/(reel|p|tv)/[A-Za-z0-9._-]+/?")
+class ReelUrlValidator(private val urlResolver: InstagramUrlResolver) {
+    private val pattern = Pattern.compile("^https?://(?:www\\.)?instagram.com/(?:reel|reels|p|tv)/[A-Za-z0-9._-]+/?")
 
-    fun validate(value: String): ValidationResult {
-        val normalized = normalize(value)
-        val isValid = pattern.matcher(normalized).find()
-        val reason = if (isValid) null else "URL must be an instagram reel link"
-        return ValidationResult(value, if (isValid) normalized else null, isValid, reason)
-    }
-
-    fun normalize(raw: String): String {
-        var value = raw.trim()
-        if (value.isEmpty()) return value
-        if (!value.startsWith("http")) {
-            value = "https://$value"
+    suspend fun validate(value: String): ValidationResult {
+        val normalized = try {
+            urlResolver.normalize(value)
+        } catch (_: Exception) {
+            null
         }
-        val uri = Uri.parse(value)
-        val cleanPath = uri.path?.trimEnd('/') ?: ""
-        return Uri.Builder()
-            .scheme("https")
-            .authority(uri.host ?: "www.instagram.com")
-            .path(cleanPath)
-            .build()
-            .toString()
+        val isValid = normalized != null && pattern.matcher(normalized).find()
+        val reason = if (isValid) null else "URL must be an instagram reel link"
+        return ValidationResult(value, normalized, isValid, reason)
     }
 }
 
@@ -344,6 +343,7 @@ data class ReelMetadata(
     val thumbnailUrl: String?,
     val width: Int?,
     val height: Int?,
+    val directDownloadUrl: String?,
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
         "url" to url,
@@ -353,6 +353,7 @@ data class ReelMetadata(
         "thumbnailUrl" to thumbnailUrl,
         "width" to width,
         "height" to height,
+        "directDownloadUrl" to directDownloadUrl,
     )
 }
 
@@ -423,8 +424,12 @@ data class NativeDownloadTask(
     }
 }
 
-class YtDlpMetadataExtractor(private val bootstrapper: BinaryBootstrapper) {
+class YtDlpMetadataExtractor(
+    private val bootstrapper: BinaryBootstrapper,
+    private val graphqlClient: InstagramGraphqlClient,
+) {
     suspend fun extract(url: String): ReelMetadata = withContext(Dispatchers.IO) {
+        graphqlClient.fetchMedia(url)?.toMetadata(url)?.let { return@withContext it }
         val dump = runCommand(url)
         if (dump != null) {
             parseDump(url, dump)
@@ -453,42 +458,68 @@ class YtDlpMetadataExtractor(private val bootstrapper: BinaryBootstrapper) {
             val title = json.optString("title", "").takeIf { it.isNotBlank() }
                 ?: json.optString("description", "").takeIf { it.isNotBlank() }
                 ?: deriveTitle(url)
-            
+
             val author = json.optString("uploader", "").takeIf { it.isNotBlank() }
                 ?: json.optString("uploader_id", "").takeIf { it.isNotBlank() }
                 ?: json.optString("channel", "").takeIf { it.isNotBlank() }
                 ?: "instagram"
-            
-            // Try to get the best thumbnail
-            var thumbnailUrl: String? = json.optString("thumbnail", "").takeIf { it.isNotBlank() }
-            if (thumbnailUrl == null) {
-                val thumbnails = json.optJSONArray("thumbnails")
-                if (thumbnails != null && thumbnails.length() > 0) {
-                    // Get the last (usually highest quality) thumbnail
-                    val lastThumb = thumbnails.getJSONObject(thumbnails.length() - 1)
-                    thumbnailUrl = lastThumb.optString("url", "").takeIf { it.isNotBlank() }
-                }
-            }
-            
+
+            val thumbnailUrl = extractThumbnail(json)
+            val duration = json.optInt("duration", 45).coerceAtLeast(1)
+            val width = json.optInt("width").takeIf { it > 0 }
+            val height = json.optInt("height").takeIf { it > 0 }
+            val directUrl = extractDirectUrl(json)
+
             ReelMetadata(
                 url = url,
                 title = title,
                 author = if (author.startsWith("@")) author else "@$author",
-                durationSeconds = json.optInt("duration", 45).coerceAtLeast(1),
+                durationSeconds = duration,
                 thumbnailUrl = thumbnailUrl,
-                width = json.optInt("width").takeIf { it > 0 },
-                height = json.optInt("height").takeIf { it > 0 },
+                width = width,
+                height = height,
+                directDownloadUrl = directUrl,
             )
         } catch (_: JSONException) {
             fallback(url)
         }
     }
 
+    private fun extractThumbnail(json: JSONObject): String? {
+        json.optString("thumbnail", "").takeIf { it.isNotBlank() }?.let { return it }
+        val thumbnails = json.optJSONArray("thumbnails") ?: return null
+        if (thumbnails.length() == 0) return null
+        return thumbnails.getJSONObject(thumbnails.length() - 1)
+            .optString("url", "")
+            .takeIf { it.isNotBlank() }
+    }
+
+    private fun extractDirectUrl(json: JSONObject): String? {
+        val formats = json.optJSONArray("formats") ?: return json.optString("url", null)
+        var bestUrl: String? = null
+        var bestHeight = 0
+        for (index in 0 until formats.length()) {
+            val format = formats.optJSONObject(index) ?: continue
+            val url = format.optString("url").takeIf { it.isNotBlank() } ?: continue
+            val ext = format.optString("ext")
+            val vcodec = format.optString("vcodec")
+            val acodec = format.optString("acodec")
+            val height = format.optInt("height", 0)
+            if (ext != "mp4") continue
+            if (vcodec == "none" || acodec == "none") continue
+            if (vcodec.isNotBlank() && !vcodec.startsWith("h264") && !vcodec.startsWith("avc")) continue
+            if (height >= bestHeight) {
+                bestHeight = height
+                bestUrl = url
+            }
+        }
+        return bestUrl ?: json.optString("url", null)
+    }
+
     private fun fallback(url: String): ReelMetadata {
         val title = deriveTitle(url)
         val author = deriveAuthor(url)
         val duration = 30 + (url.hashCode().absoluteValue % 45)
-        // Extract reel ID from URL for more realistic thumbnail
         val reelId = url.trimEnd('/').split('/').lastOrNull()?.take(11) ?: "placeholder"
         return ReelMetadata(
             url = url,
@@ -498,6 +529,7 @@ class YtDlpMetadataExtractor(private val bootstrapper: BinaryBootstrapper) {
             thumbnailUrl = "https://instagram.com/p/$reelId/media/?size=m",
             width = 1080,
             height = 1920,
+            directDownloadUrl = null,
         )
     }
 
@@ -513,82 +545,167 @@ class YtDlpMetadataExtractor(private val bootstrapper: BinaryBootstrapper) {
 }
 
 class ScopedDownloadPipeline(
-    private val context: Context,
     private val bootstrapper: BinaryBootstrapper,
+    private val httpClient: OkHttpClient,
 ) {
-    private val random = SecureRandom()
-
     suspend fun run(
         taskId: String,
         metadata: ReelMetadata,
         downloadFolder: String?,
         onProgress: (Double, Int) -> Unit,
     ): File = withContext(Dispatchers.IO) {
-        // Use provided folder or default to Downloads/instagram-reels
-        val downloadDir = if (!downloadFolder.isNullOrBlank()) {
-            File(downloadFolder)
-        } else {
-            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "instagram-reels")
+        val baseDir = resolveDownloadDir(downloadFolder)
+        if (!baseDir.exists()) {
+            baseDir.mkdirs()
         }
-        
-        if (!downloadDir.exists()) {
-            downloadDir.mkdirs()
+        val authorDir = authorDirectory(baseDir, metadata.author)
+        if (!authorDir.exists()) {
+            authorDir.mkdirs()
         }
-        
+
         val safeTitle = metadata.title.replace(Regex("[^A-Za-z0-9_-]"), "_")
-        val tempOutput = File(downloadDir, "${safeTitle}_${taskId.take(6)}_temp.mp4")
-        val finalOutput = File(downloadDir, "${safeTitle}_${taskId.take(6)}.mp4")
-        
-        // Try to download with yt-dlp
-        val downloaded = downloadWithYtDlp(metadata.url, tempOutput, onProgress)
-        
-        if (downloaded && tempOutput.exists() && tempOutput.length() > 0) {
-            // Re-encode with FFmpeg to ensure H.264 + AAC compatibility
+        val tempOutput = File(authorDir, "${safeTitle}_${taskId.take(6)}_temp.mp4")
+        val finalOutput = File(authorDir, "${safeTitle}_${taskId.take(6)}.mp4")
+        if (tempOutput.exists()) tempOutput.delete()
+
+        var lastError: String? = null
+
+        val ytResult = downloadWithYtDlp(metadata.url, tempOutput, onProgress)
+        if (!ytResult.success) {
+            lastError = ytResult.error ?: lastError
+        }
+        if (tempOutput.exists() && tempOutput.length() > 0) {
             val encoded = encodeWithFfmpeg(tempOutput, finalOutput)
             tempOutput.delete()
-            
             if (encoded && finalOutput.exists()) {
                 return@withContext finalOutput
             }
+            lastError = "Failed to optimize downloaded reel"
         }
-        
-        // Fallback: generate stub file for demo purposes
-        generateStubVideo(finalOutput, metadata, onProgress)
-        finalOutput
+
+        tempOutput.delete()
+        val directUrl = metadata.directDownloadUrl
+        if (!directUrl.isNullOrBlank()) {
+            val directResult = downloadDirect(directUrl, tempOutput, onProgress)
+            if (!directResult.success) {
+                lastError = directResult.error ?: lastError
+            } else if (tempOutput.exists() && tempOutput.length() > 0) {
+                val encoded = encodeWithFfmpeg(tempOutput, finalOutput)
+                tempOutput.delete()
+                if (encoded && finalOutput.exists()) {
+                    return@withContext finalOutput
+                }
+                lastError = "Failed to optimize direct reel stream"
+            } else {
+                tempOutput.delete()
+            }
+        }
+
+        tempOutput.delete()
+        throw IOException(lastError ?: "Instagram download failed. Please try again.")
     }
 
-    private fun downloadWithYtDlp(url: String, output: File, onProgress: (Double, Int) -> Unit): Boolean {
+    private fun resolveDownloadDir(downloadFolder: String?): File {
+        return if (!downloadFolder.isNullOrBlank()) {
+            File(downloadFolder)
+        } else {
+            File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                "instagram-reels"
+            )
+        }
+    }
+
+    private fun authorDirectory(baseDir: File, author: String?): File {
+        val rawAuthor = author?.removePrefix("@").orEmpty().ifBlank { "instagram" }
+        val safeAuthor = rawAuthor.lowercase(Locale.US).replace(Regex("[^a-z0-9_-]"), "_")
+        return File(baseDir, safeAuthor)
+    }
+
+    private fun downloadWithYtDlp(url: String, output: File, onProgress: (Double, Int) -> Unit): DownloadAttempt {
         return try {
             val binary = bootstrapper.ensureExecutable(BinaryAsset.YT_DLP)
             val process = ProcessBuilder(
                 binary.absolutePath,
                 "--no-check-certificate",
                 "--no-warnings",
-                "-f", "best",
-                "-o", output.absolutePath,
+                "--retries", "5",
+                "--fragment-retries", "5",
+                "--retry-sleep", "2",
+                "--concurrent-fragments", "4",
+                "-f",
+                "bestvideo[ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                "-o",
+                output.absolutePath,
                 url
             )
                 .redirectErrorStream(true)
                 .start()
-            
-            // Monitor progress
+
             val reader = process.inputStream.bufferedReader()
             var line: String?
+            var lastMessage: String? = null
             while (reader.readLine().also { line = it } != null) {
-                // Parse yt-dlp progress output
-                line?.let { progressLine ->
-                    val progressMatch = Regex("\\[(download|ffmpeg)\\]\\s+([0-9.]+)%").find(progressLine)
-                    if (progressMatch != null) {
-                        val percent = progressMatch.groupValues[2].toDoubleOrNull() ?: 0.0
-                        onProgress(percent / 100.0, 0)
-                    }
+                val progressLine = line ?: continue
+                lastMessage = progressLine
+                val progressMatch = PROGRESS_PATTERN.find(progressLine)
+                if (progressMatch != null) {
+                    val percent = progressMatch.groupValues[2].toDoubleOrNull() ?: 0.0
+                    val eta = ETA_PATTERN.find(progressLine)?.let { parseEta(it.groupValues[1]) } ?: 0
+                    onProgress((percent / 100.0).coerceIn(0.0, 0.98), eta)
                 }
             }
-            
-            val finished = process.waitFor(120, TimeUnit.SECONDS)
-            finished && process.exitValue() == 0 && output.exists()
-        } catch (e: Exception) {
-            false
+
+            val finished = process.waitFor(240, TimeUnit.SECONDS)
+            val success = finished && process.exitValue() == 0 && output.exists() && output.length() > 0
+            if (!success) {
+                output.delete()
+            }
+            DownloadAttempt(success, if (success) null else lastMessage ?: "yt-dlp exited with code ${process.exitValue()}")
+        } catch (error: Exception) {
+            output.delete()
+            DownloadAttempt(false, error.message ?: "yt-dlp failed")
+        }
+    }
+
+    private fun downloadDirect(url: String, output: File, onProgress: (Double, Int) -> Unit): DownloadAttempt {
+        return try {
+            val request = Request.Builder()
+                .url(url)
+                .get()
+                .header("User-Agent", INSTAGRAM_MOBILE_USER_AGENT)
+                .header("Accept", "*/*")
+                .build()
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return DownloadAttempt(false, "Instagram responded with HTTP ${response.code}")
+                }
+                val body = response.body ?: return DownloadAttempt(false, "Instagram returned an empty stream")
+                val total = body.contentLength()
+                output.outputStream().use { sink ->
+                    body.byteStream().use { input ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        var read: Int
+                        var downloaded = 0L
+                        val startTime = System.nanoTime()
+                        while (input.read(buffer).also { read = it } != -1) {
+                            sink.write(buffer, 0, read)
+                            downloaded += read
+                            if (total > 0) {
+                                val progress = downloaded.toDouble() / total.toDouble()
+                                val elapsedSeconds = ((System.nanoTime() - startTime) / 1_000_000_000.0).coerceAtLeast(0.001)
+                                val speed = downloaded / elapsedSeconds
+                                val etaSeconds = if (speed > 0) ((total - downloaded) / speed).toInt() else 0
+                                onProgress(progress.coerceIn(0.0, 0.99), etaSeconds)
+                            }
+                        }
+                    }
+                }
+                DownloadAttempt(true, null)
+            }
+        } catch (error: Exception) {
+            output.delete()
+            DownloadAttempt(false, error.message ?: "Direct download failed")
         }
     }
 
@@ -609,31 +726,33 @@ class ScopedDownloadPipeline(
             )
                 .redirectErrorStream(true)
                 .start()
-            
+
             val finished = process.waitFor(180, TimeUnit.SECONDS)
             finished && process.exitValue() == 0 && output.exists()
-        } catch (e: Exception) {
+        } catch (error: Exception) {
             false
         }
     }
 
-    private suspend fun generateStubVideo(output: File, metadata: ReelMetadata, onProgress: (Double, Int) -> Unit) {
-        val chunkCount = 32
-        val chunkSize = 256 * 1024
-        FileOutputStream(output).use { stream ->
-            repeat(chunkCount) { index ->
-                val ctx = currentCoroutineContext()
-                if (!ctx.isActive) throw CancellationException("cancelled")
-                val buffer = ByteArray(chunkSize)
-                random.nextBytes(buffer)
-                stream.write(buffer)
-                val progress = (index + 1).toDouble() / chunkCount
-                val remainingMillis = (chunkCount - index - 1) * 300L
-                onProgress(progress, (remainingMillis / 1000L).toInt().coerceAtLeast(0))
-                delay(300)
+    private fun parseEta(token: String): Int {
+        val parts = token.split(":")
+        return when (parts.size) {
+            2 -> parts[0].toIntOrNull()?.times(60)?.plus(parts[1].toIntOrNull() ?: 0) ?: 0
+            3 -> {
+                val hours = parts[0].toIntOrNull() ?: 0
+                val minutes = parts[1].toIntOrNull() ?: 0
+                val seconds = parts[2].toIntOrNull() ?: 0
+                hours * 3600 + minutes * 60 + seconds
             }
+            else -> 0
         }
-        delay(200)
+    }
+
+    private data class DownloadAttempt(val success: Boolean, val error: String?)
+
+    companion object {
+        private val PROGRESS_PATTERN = Regex("\\[(download|ffmpeg)\\]\\s+([0-9.]+)%")
+        private val ETA_PATTERN = Regex("ETA\\s+([0-9]{2}:[0-9]{2}(?::[0-9]{2})?)")
     }
 }
 
