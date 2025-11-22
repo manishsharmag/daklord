@@ -9,6 +9,7 @@ class MainActivity : FlutterActivity() {
     private lateinit var downloaderBridge: DownloaderBridge
     private lateinit var upscalerBridge: UpscalerBridge
     private lateinit var sharedIntentBridge: SharedIntentBridge
+    private lateinit var folderPickerService: FolderPickerService
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -20,6 +21,9 @@ class MainActivity : FlutterActivity() {
 
         sharedIntentBridge = SharedIntentBridge(this)
         sharedIntentBridge.start(flutterEngine)
+        
+        folderPickerService = FolderPickerService(this)
+        folderPickerService.start(flutterEngine)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -27,6 +31,15 @@ class MainActivity : FlutterActivity() {
         if (this::sharedIntentBridge.isInitialized) {
             sharedIntentBridge.onNewIntent(intent)
         }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (this::folderPickerService.isInitialized &&
+            folderPickerService.onActivityResult(requestCode, resultCode, data)
+        ) {
+            return
+        }
+        super.onActivityResult(requestCode, resultCode, data)
     }
 
     override fun onRequestPermissionsResult(
@@ -48,6 +61,9 @@ class MainActivity : FlutterActivity() {
         }
         if (this::upscalerBridge.isInitialized) {
             upscalerBridge.dispose()
+        }
+        if (this::folderPickerService.isInitialized) {
+            folderPickerService.dispose()
         }
         super.onDestroy()
     }

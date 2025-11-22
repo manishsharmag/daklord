@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:file_picker/file_picker.dart';
 
+import 'package:insta_reel_downloader/core/services/folder_picker_service.dart';
 import 'package:insta_reel_downloader/data/providers/settings_providers.dart';
 
 class SettingsView extends ConsumerWidget {
@@ -224,9 +224,10 @@ class SettingsView extends ConsumerWidget {
                           icon: const Icon(Icons.folder_open),
                           label: const Text('Browse Folders'),
                           onPressed: () async {
-                            final selectedDirectory = await FilePicker.platform.getDirectoryPath();
+                            final selectedDirectory = await FolderPickerService.selectFolder();
                             if (selectedDirectory != null && context.mounted) {
                               await saveCustomDownloadsPath(selectedDirectory);
+                              // ignore: unused_result
                               ref.refresh(customDownloadsFolderPathAsyncProvider);
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
