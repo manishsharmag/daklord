@@ -125,6 +125,7 @@ class DownloaderBridge(private val activity: FlutterActivity) :
 
     private fun handleQueue(call: MethodCall, result: MethodChannel.Result) {
         val url = call.argument<String>("url").orEmpty()
+        val downloadFolder = call.argument<String>("downloadFolder")
         scope.launch {
             try {
                 val validation = validator.validate(url)
@@ -134,7 +135,7 @@ class DownloaderBridge(private val activity: FlutterActivity) :
                 val task = NativeDownloadTask.fromMetadata(normalized, metadata)
                 tasks[task.id] = task
                 emit(task)
-                scheduleDownload(task, metadata)
+                scheduleDownload(task, metadata, downloadFolder)
                 replySuccess(result, task.toMap())
             } catch (error: Throwable) {
                 replyError(result, "queue_error", error.message ?: "Unable to queue download")
@@ -163,6 +164,7 @@ class DownloaderBridge(private val activity: FlutterActivity) :
 
     private fun handleRetry(call: MethodCall, result: MethodChannel.Result) {
         val taskId = call.argument<String>("taskId").orEmpty()
+        val downloadFolder = call.argument<String>("downloadFolder")
         val existing = tasks[taskId]
         if (existing == null) {
             replyError(result, "retry_missing", "Task not found")
@@ -188,7 +190,7 @@ class DownloaderBridge(private val activity: FlutterActivity) :
                 width = reset.width,
                 height = reset.height,
             )
-            scheduleDownload(reset, metadata)
+            scheduleDownload(reset, metadata, downloadFolder)
             replySuccess(result, reset.toMap())
         }
     }
@@ -204,7 +206,7 @@ class DownloaderBridge(private val activity: FlutterActivity) :
         replySuccess(result, payload)
     }
 
-    private fun scheduleDownload(task: NativeDownloadTask, metadata: ReelMetadata) {
+    private fun scheduleDownload(task: NativeDownloadTask, metadata: ReelMetadata, downloadFolder: String?) {
         val job = scope.launch {
             updateTask(task.id) {
                 it.copy(
@@ -214,7 +216,7 @@ class DownloaderBridge(private val activity: FlutterActivity) :
                 )
             }
             try {
-                val output = downloadPipeline.run(task.id, metadata) { progress, eta ->
+                val output = downloadPipeline.run(task.id, metadata, downloadFolder) { progress, eta ->
                     updateTask(task.id) {
                         it.copy(
                             status = if (progress >= 1.0) NativeTaskStatus.COMPLETED else NativeTaskStatus.DOWNLOADING,
@@ -519,17 +521,23 @@ class ScopedDownloadPipeline(
     suspend fun run(
         taskId: String,
         metadata: ReelMetadata,
+        downloadFolder: String?,
         onProgress: (Double, Int) -> Unit,
     ): File = withContext(Dispatchers.IO) {
-        // Use Documents/InstaReelDownloader directory
-        val documentsDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "InstaReelDownloader")
-        if (!documentsDir.exists()) {
-            documentsDir.mkdirs()
+        // Use provided folder or default to Downloads/instagram-reels
+        val downloadDir = if (!downloadFolder.isNullOrBlank()) {
+            File(downloadFolder)
+        } else {
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "instagram-reels")
+        }
+        
+        if (!downloadDir.exists()) {
+            downloadDir.mkdirs()
         }
         
         val safeTitle = metadata.title.replace(Regex("[^A-Za-z0-9_-]"), "_")
-        val tempOutput = File(documentsDir, "${safeTitle}_${taskId.take(6)}_temp.mp4")
-        val finalOutput = File(documentsDir, "${safeTitle}_${taskId.take(6)}.mp4")
+        val tempOutput = File(downloadDir, "${safeTitle}_${taskId.take(6)}_temp.mp4")
+        val finalOutput = File(downloadDir, "${safeTitle}_${taskId.take(6)}.mp4")
         
         // Try to download with yt-dlp
         val downloaded = downloadWithYtDlp(metadata.url, tempOutput, onProgress)
@@ -682,10 +690,34 @@ class StoragePermissionHelper(private val activity: FlutterActivity) {
     private var pending: ((Boolean) -> Unit)? = null
 
     fun ensure(callback: (Boolean) -> Unit) {
-        // Android 11+ (API 30+) - Use scoped storage or MANAGE_EXTERNAL_STORAGE
-        // For Documents folder, we can use scoped storage without special permissions
+        // Android 13+ (API 33+) - Request READ_MEDIA_VIDEO, READ_MEDIA_AUDIO, READ_MEDIA_IMAGES
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val mediaPermissions = arrayOf(
+                Manifest.permission.READ_MEDIA_VIDEO,
+                Manifest.permission.READ_MEDIA_AUDIO,
+                Manifest.permission.READ_MEDIA_IMAGES,
+            )
+            
+            val missingPermissions = mediaPermissions.filter { perm ->
+                ContextCompat.checkSelfPermission(activity, perm) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            }
+            
+            if (missingPermissions.isEmpty()) {
+                callback(true)
+                return
+            }
+            
+            if (pending != null) {
+                callback(false)
+                return
+            }
+            pending = callback
+            ActivityCompat.requestPermissions(activity, missingPermissions.toTypedArray(), PERMISSION_REQUEST_CODE)
+            return
+        }
+        
+        // Android 11-12 (API 30-31) - Use scoped storage for Downloads folder
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Android 11+ allows writing to Documents folder via scoped storage
             callback(true)
             return
         }

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:insta_reel_downloader/core/di/providers.dart';
 import 'package:insta_reel_downloader/data/datasources/shared_intent_channel.dart';
+import 'package:insta_reel_downloader/data/providers/settings_providers.dart';
 import 'package:insta_reel_downloader/domain/entities/download_metadata.dart';
 import 'package:insta_reel_downloader/domain/entities/download_task.dart';
 import 'package:insta_reel_downloader/domain/entities/url_validation_result.dart';
@@ -179,7 +180,11 @@ class HomeController extends StateNotifier<HomeState> {
         return;
       }
       final url = (state.normalizedUrl ?? state.url).trim();
-      final DownloadTask task = await _repository.enqueueDownload(url);
+      final downloadFolder = _ref.read(downloadsFolderPathProvider);
+      final DownloadTask task = await _repository.enqueueDownload(
+        url,
+        downloadFolder: downloadFolder,
+      );
       state = state.copyWith(
         isSubmitting: false,
         feedback: 'Queued ${task.title ?? 'new reel'}',

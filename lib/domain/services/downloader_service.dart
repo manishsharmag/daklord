@@ -4,7 +4,7 @@ import '../entities/history_entry.dart';
 import '../entities/url_validation_result.dart';
 
 abstract class DownloaderService {
-  Future<DownloadTask> queueDownload(String url);
+  Future<DownloadTask> queueDownload(String url, {String? downloadFolder});
 
   Stream<DownloadTask> observeTasks();
 
