@@ -73,7 +73,7 @@ class _AppShellState extends ConsumerState<AppShell> {
   ];
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final selectedIndex = ref.watch(navigationIndexProvider);
     final destination = _destinations[selectedIndex];
 

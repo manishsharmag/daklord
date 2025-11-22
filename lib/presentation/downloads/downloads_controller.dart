@@ -106,9 +106,10 @@ class DownloadsController extends StateNotifier<DownloadsState> {
     }
     
     final result = await OpenFile.open(filePath);
-    if (result.type != ResultType.done) {
-      throw Exception(result.message ?? 'Could not open file');
+    if (result.type == ResultType.done) {
+      return;
     }
+    throw Exception(result.message ?? 'Could not open file');
   }
 
   Future<void> openFileManager(String filePath) async {
@@ -120,9 +121,10 @@ class DownloadsController extends StateNotifier<DownloadsState> {
     // Open the parent directory
     final directory = file.parent.path;
     final result = await OpenFile.open(directory);
-    if (result.type != ResultType.done) {
-      throw Exception(result.message ?? 'Could not open directory');
+    if (result.type == ResultType.done) {
+      return;
     }
+    throw Exception(result.message ?? 'Could not open directory');
   }
 
   @override
