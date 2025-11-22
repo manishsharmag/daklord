@@ -20,14 +20,6 @@ class _HomeViewState extends ConsumerState<HomeView> {
     _controller = TextEditingController(
       text: ref.read(homeControllerProvider).url,
     );
-    ref.listen<HomeState>(homeControllerProvider, (previous, next) {
-      if (_controller.text != next.url) {
-        _controller.value = TextEditingValue(
-          text: next.url,
-          selection: TextSelection.collapsed(offset: next.url.length),
-        );
-      }
-    });
   }
 
   @override
@@ -40,6 +32,15 @@ class _HomeViewState extends ConsumerState<HomeView> {
   Widget build(BuildContext context) {
     final state = ref.watch(homeControllerProvider);
     final homeController = ref.read(homeControllerProvider.notifier);
+    
+    ref.listen<HomeState>(homeControllerProvider, (previous, next) {
+      if (_controller.text != next.url) {
+        _controller.value = TextEditingValue(
+          text: next.url,
+          selection: TextSelection.collapsed(offset: next.url.length),
+        );
+      }
+    });
 
     return LayoutBuilder(
       builder: (context, constraints) {
