@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:file_picker/file_picker.dart';
 
 import 'package:insta_reel_downloader/data/providers/settings_providers.dart';
 
@@ -16,6 +17,7 @@ class SettingsView extends ConsumerWidget {
     final privacyMode = ref.watch(privacyModeProvider);
     final downloadsFolderOption = ref.watch(downloadsFolderOptionProvider);
     final downloadsFolderPath = ref.watch(downloadsFolderPathProvider);
+    final customPathAsync = ref.watch(customDownloadsFolderPathAsyncProvider);
 
     return ListView(
       padding: const EdgeInsets.all(24),
@@ -134,10 +136,27 @@ class SettingsView extends ConsumerWidget {
                             style: TextStyle(fontWeight: FontWeight.w500),
                           ),
                           const SizedBox(height: 4),
-                          Text(
-                            downloadsFolderPath,
-                            style: Theme.of(context).textTheme.labelSmall,
-                            overflow: TextOverflow.ellipsis,
+                          customPathAsync.when(
+                            data: (customPath) {
+                              final displayPath = downloadsFolderOption == 'custom'
+                                  ? customPath
+                                  : downloadsFolderPath;
+                              return Text(
+                                displayPath,
+                                style: Theme.of(context).textTheme.labelSmall,
+                                overflow: TextOverflow.ellipsis,
+                              );
+                            },
+                            loading: () => Text(
+                              downloadsFolderPath,
+                              style: Theme.of(context).textTheme.labelSmall,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            error: (_, __) => Text(
+                              downloadsFolderPath,
+                              style: Theme.of(context).textTheme.labelSmall,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ],
                       ),
@@ -146,7 +165,10 @@ class SettingsView extends ConsumerWidget {
                       icon: const Icon(Icons.copy),
                       label: const Text('Copy'),
                       onPressed: () async {
-                        await Clipboard.setData(ClipboardData(text: downloadsFolderPath));
+                        final displayPath = downloadsFolderOption == 'custom'
+                            ? (customPathAsync.value ?? downloadsFolderPath)
+                            : downloadsFolderPath;
+                        await Clipboard.setData(ClipboardData(text: displayPath));
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Path copied to clipboard')),
@@ -183,6 +205,38 @@ class SettingsView extends ConsumerWidget {
                       },
                       contentPadding: EdgeInsets.zero,
                     ),
+                    RadioListTile<String>(
+                      title: const Text('Custom folder'),
+                      subtitle: const Text('Choose any folder on your device'),
+                      value: 'custom',
+                      groupValue: downloadsFolderOption,
+                      onChanged: (value) {
+                        if (value != null) {
+                          ref.read(downloadsFolderOptionProvider.notifier).state = value;
+                        }
+                      },
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    if (downloadsFolderOption == 'custom')
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12, left: 0),
+                        child: FilledButton.icon(
+                          icon: const Icon(Icons.folder_open),
+                          label: const Text('Browse Folders'),
+                          onPressed: () async {
+                            final selectedDirectory = await FilePicker.platform.getDirectoryPath();
+                            if (selectedDirectory != null && context.mounted) {
+                              await saveCustomDownloadsPath(selectedDirectory);
+                              ref.refresh(customDownloadsFolderPathAsyncProvider);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Folder selected: $selectedDirectory')),
+                                );
+                              }
+                            }
+                          },
+                        ),
+                      ),
                   ],
                 ),
               ],

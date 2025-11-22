@@ -82,9 +82,18 @@ class UpscalerBridge(private val activity: FlutterActivity) :
         try {
             val modelFile = loadModelFile(activity.applicationContext)
             if (modelFile != null) {
-                interpreter = Interpreter(modelFile)
+                try {
+                    interpreter = Interpreter(modelFile)
+                    android.util.Log.d("UpscalerBridge", "TensorFlow Lite model loaded successfully")
+                } catch (e: Exception) {
+                    android.util.Log.e("UpscalerBridge", "Failed to create interpreter: ${e.message}", e)
+                    interpreter = null
+                }
+            } else {
+                android.util.Log.w("UpscalerBridge", "Model file not found, upscaling will use bicubic fallback")
             }
         } catch (e: Exception) {
+            android.util.Log.e("UpscalerBridge", "Error during model initialization: ${e.message}", e)
             interpreter = null
         }
     }
@@ -99,13 +108,23 @@ class UpscalerBridge(private val activity: FlutterActivity) :
         return try {
             val assetManager = context.assets
             val modelPath = "upscaler/esrgan_fp16.tflite"
-            val fileDescriptor = assetManager.openFd(modelPath)
-            val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
-            val fileChannel = inputStream.channel
-            val startOffset = fileDescriptor.startOffset
-            val declaredLength = fileDescriptor.declaredLength
-            fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
+            try {
+                val fileDescriptor = assetManager.openFd(modelPath)
+                val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
+                val fileChannel = inputStream.channel
+                val startOffset = fileDescriptor.startOffset
+                val declaredLength = fileDescriptor.declaredLength
+                android.util.Log.d("UpscalerBridge", "Loading model from $modelPath (size: $declaredLength bytes)")
+                fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
+            } catch (e: java.io.FileNotFoundException) {
+                android.util.Log.w("UpscalerBridge", "Model file not found: $modelPath - will use bicubic upscaling")
+                null
+            } catch (e: Exception) {
+                android.util.Log.e("UpscalerBridge", "Error loading model file: ${e.message}", e)
+                null
+            }
         } catch (e: Exception) {
+            android.util.Log.e("UpscalerBridge", "Unexpected error in loadModelFile: ${e.message}", e)
             null
         }
     }
@@ -163,76 +182,121 @@ class UpscalerBridge(private val activity: FlutterActivity) :
 
     private suspend fun processUpscale(task: UpscaleTask) {
         val job = scope.launch {
-            updateTask(task.id) {
-                it.copy(status = UpscaleStatus.PREPARING, progress = 0.05)
-            }
-
-            val inputFile = File(task.videoPath)
-            if (!inputFile.exists()) {
-                throw IllegalArgumentException("Input video file not found")
-            }
-
-            val outputDir = File(inputFile.parent, "upscaled")
-            outputDir.mkdirs()
-            val outputFile = File(
-                outputDir,
-                "${inputFile.nameWithoutExtension}_${task.scaleFactor}x.mp4"
-            )
-
-            updateTask(task.id) {
-                it.copy(status = UpscaleStatus.EXTRACTING_FRAMES, progress = 0.1)
-            }
-
-            val framesDir = File(activity.applicationContext.cacheDir, "frames_${task.id}")
-            framesDir.mkdirs()
-
             try {
-                extractFrames(inputFile, framesDir)
-
-                val frameFiles = framesDir.listFiles()?.sortedBy { it.name } ?: emptyList()
-                val totalFrames = frameFiles.size
-
-                if (totalFrames == 0) {
-                    throw IllegalStateException("No frames extracted")
+                updateTask(task.id) {
+                    it.copy(status = UpscaleStatus.PREPARING, progress = 0.05)
                 }
+
+                val inputFile = File(task.videoPath)
+                if (!inputFile.exists()) {
+                    throw IllegalArgumentException("Input video file not found: ${task.videoPath}")
+                }
+
+                if (!inputFile.canRead()) {
+                    throw IllegalArgumentException("Input video file is not readable: ${task.videoPath}")
+                }
+
+                android.util.Log.d("UpscalerBridge", "Starting upscale for: ${inputFile.absolutePath}")
+
+                val outputDir = File(inputFile.parent, "upscaled")
+                if (!outputDir.mkdirs() && !outputDir.isDirectory) {
+                    throw IllegalArgumentException("Failed to create output directory: ${outputDir.absolutePath}")
+                }
+                
+                val outputFile = File(
+                    outputDir,
+                    "${inputFile.nameWithoutExtension}_${task.scaleFactor}x.mp4"
+                )
 
                 updateTask(task.id) {
-                    it.copy(status = UpscaleStatus.UPSCALING, progress = 0.2)
+                    it.copy(status = UpscaleStatus.EXTRACTING_FRAMES, progress = 0.1)
                 }
 
-                val upscaledDir = File(activity.applicationContext.cacheDir, "upscaled_${task.id}")
-                upscaledDir.mkdirs()
+                val framesDir = File(activity.applicationContext.cacheDir, "frames_${task.id}")
+                if (!framesDir.mkdirs() && !framesDir.isDirectory) {
+                    throw IllegalArgumentException("Failed to create frames directory: ${framesDir.absolutePath}")
+                }
 
-                frameFiles.forEachIndexed { index, frameFile ->
-                    if (!isActive) throw CancellationException("Task cancelled")
+                try {
+                    android.util.Log.d("UpscalerBridge", "Extracting frames to: ${framesDir.absolutePath}")
+                    extractFrames(inputFile, framesDir)
 
-                    upscaleFrame(frameFile, File(upscaledDir, frameFile.name), task.scaleFactor)
+                    val frameFiles = framesDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                    val totalFrames = frameFiles.size
 
-                    val progress = 0.2 + (0.7 * (index + 1) / totalFrames)
-                    updateTask(task.id) {
-                        it.copy(progress = progress)
+                    if (totalFrames == 0) {
+                        throw IllegalStateException("No frames extracted from video")
                     }
+
+                    android.util.Log.d("UpscalerBridge", "Extracted $totalFrames frames")
+
+                    updateTask(task.id) {
+                        it.copy(status = UpscaleStatus.UPSCALING, progress = 0.2)
+                    }
+
+                    val upscaledDir = File(activity.applicationContext.cacheDir, "upscaled_${task.id}")
+                    if (!upscaledDir.mkdirs() && !upscaledDir.isDirectory) {
+                        throw IllegalArgumentException("Failed to create upscaled directory: ${upscaledDir.absolutePath}")
+                    }
+
+                    frameFiles.forEachIndexed { index, frameFile ->
+                        if (!isActive) throw CancellationException("Task cancelled")
+
+                        try {
+                            upscaleFrame(frameFile, File(upscaledDir, frameFile.name), task.scaleFactor)
+                        } catch (e: Exception) {
+                            android.util.Log.e("UpscalerBridge", "Error upscaling frame ${index + 1}/$totalFrames: ${e.message}", e)
+                            throw e
+                        }
+
+                        val progress = 0.2 + (0.7 * (index + 1) / totalFrames)
+                        updateTask(task.id) {
+                            it.copy(progress = progress)
+                        }
+                    }
+
+                    updateTask(task.id) {
+                        it.copy(status = UpscaleStatus.ENCODING, progress = 0.9)
+                    }
+
+                    android.util.Log.d("UpscalerBridge", "Encoding upscaled frames to: ${outputFile.absolutePath}")
+                    encodeVideo(upscaledDir, inputFile, outputFile)
+
+                    if (!outputFile.exists()) {
+                        throw IllegalStateException("Output file was not created: ${outputFile.absolutePath}")
+                    }
+
+                    updateTask(task.id) {
+                        it.copy(
+                            status = UpscaleStatus.COMPLETED,
+                            progress = 1.0,
+                            outputPath = outputFile.absolutePath,
+                            completedAt = System.currentTimeMillis()
+                        )
+                    }
+
+                    android.util.Log.d("UpscalerBridge", "Upscaling completed successfully: ${outputFile.absolutePath}")
+                } finally {
+                    framesDir.deleteRecursively()
+                    File(activity.applicationContext.cacheDir, "upscaled_${task.id}").deleteRecursively()
+                    jobs.remove(task.id)
                 }
-
-                updateTask(task.id) {
-                    it.copy(status = UpscaleStatus.ENCODING, progress = 0.9)
-                }
-
-                encodeVideo(upscaledDir, inputFile, outputFile)
-
+            } catch (e: CancellationException) {
+                android.util.Log.d("UpscalerBridge", "Upscaling cancelled for task ${task.id}")
                 updateTask(task.id) {
                     it.copy(
-                        status = UpscaleStatus.COMPLETED,
-                        progress = 1.0,
-                        outputPath = outputFile.absolutePath,
-                        completedAt = System.currentTimeMillis()
+                        status = UpscaleStatus.FAILED,
+                        error = "Cancelled by user"
                     )
                 }
-
-            } finally {
-                framesDir.deleteRecursively()
-                File(activity.applicationContext.cacheDir, "upscaled_${task.id}").deleteRecursively()
-                jobs.remove(task.id)
+            } catch (e: Exception) {
+                android.util.Log.e("UpscalerBridge", "Error during upscaling: ${e.message}", e)
+                updateTask(task.id) {
+                    it.copy(
+                        status = UpscaleStatus.FAILED,
+                        error = e.message ?: "Unknown error occurred"
+                    )
+                }
             }
         }
         
@@ -241,34 +305,33 @@ class UpscalerBridge(private val activity: FlutterActivity) :
         try {
             job.join()
         } catch (e: CancellationException) {
-            updateTask(task.id) {
-                it.copy(
-                    status = UpscaleStatus.FAILED,
-                    error = "Cancelled"
-                )
-            }
+            // Already handled in the job
         } catch (e: Exception) {
-            updateTask(task.id) {
-                it.copy(
-                    status = UpscaleStatus.FAILED,
-                    error = e.message ?: "Unknown error"
-                )
-            }
+            android.util.Log.e("UpscalerBridge", "Unexpected error in job.join(): ${e.message}", e)
         }
     }
 
     private suspend fun extractFrames(inputFile: File, outputDir: File) = withContext(Dispatchers.IO) {
-        val ffmpeg = bootstrapper.ensureExecutable(BinaryAsset.FFMPEG)
-        val process = ProcessBuilder(
-            ffmpeg.absolutePath,
-            "-i", inputFile.absolutePath,
-            "-vf", "fps=30",
-            "${outputDir.absolutePath}/frame_%04d.png"
-        ).redirectErrorStream(true).start()
+        try {
+            val ffmpeg = bootstrapper.ensureExecutable(BinaryAsset.FFMPEG)
+            android.util.Log.d("UpscalerBridge", "Using FFmpeg: ${ffmpeg.absolutePath}")
+            
+            val process = ProcessBuilder(
+                ffmpeg.absolutePath,
+                "-i", inputFile.absolutePath,
+                "-vf", "fps=30",
+                "${outputDir.absolutePath}/frame_%04d.png"
+            ).redirectErrorStream(true).start()
 
-        val exitCode = process.waitFor()
-        if (exitCode != 0) {
-            throw RuntimeException("FFmpeg frame extraction failed with code $exitCode")
+            val exitCode = process.waitFor()
+            if (exitCode != 0) {
+                android.util.Log.e("UpscalerBridge", "FFmpeg frame extraction failed with exit code $exitCode")
+                throw RuntimeException("FFmpeg frame extraction failed with code $exitCode")
+            }
+            android.util.Log.d("UpscalerBridge", "Frame extraction completed successfully")
+        } catch (e: Exception) {
+            android.util.Log.e("UpscalerBridge", "Error during frame extraction: ${e.message}", e)
+            throw e
         }
     }
 
@@ -276,46 +339,74 @@ class UpscalerBridge(private val activity: FlutterActivity) :
         val currentInterpreter = interpreter
         
         if (currentInterpreter == null) {
-            simulateUpscale(inputFrame, outputFrame, scaleFactor)
+            try {
+                simulateUpscale(inputFrame, outputFrame, scaleFactor)
+            } catch (e: Exception) {
+                android.util.Log.e("UpscalerBridge", "Error in bicubic upscale fallback: ${e.message}", e)
+                throw e
+            }
             return@withContext
         }
 
         try {
             val bitmap = BitmapFactory.decodeFile(inputFrame.absolutePath)
-            val inputBuffer = bitmapToByteBuffer(bitmap)
+                ?: throw IllegalArgumentException("Failed to decode bitmap from ${inputFrame.absolutePath}")
             
-            val inputShape = currentInterpreter.getInputTensor(0).shape()
-            val outputShape = currentInterpreter.getOutputTensor(0).shape()
-            
-            val outputBuffer = ByteBuffer.allocateDirect(
-                outputShape[1] * outputShape[2] * outputShape[3] * 4
-            ).order(ByteOrder.nativeOrder())
-            
-            currentInterpreter.run(inputBuffer, outputBuffer)
-            
-            val upscaledBitmap = byteBufferToBitmap(outputBuffer, outputShape[1], outputShape[2])
-            
-            FileOutputStream(outputFrame).use { out ->
-                upscaledBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            try {
+                val inputBuffer = bitmapToByteBuffer(bitmap)
+                
+                val inputShape = currentInterpreter.getInputTensor(0).shape()
+                val outputShape = currentInterpreter.getOutputTensor(0).shape()
+                
+                android.util.Log.d("UpscalerBridge", "Input shape: ${inputShape.contentToString()}, Output shape: ${outputShape.contentToString()}")
+                
+                val outputBuffer = ByteBuffer.allocateDirect(
+                    outputShape[1] * outputShape[2] * outputShape[3] * 4
+                ).order(ByteOrder.nativeOrder())
+                
+                currentInterpreter.run(inputBuffer, outputBuffer)
+                
+                val upscaledBitmap = byteBufferToBitmap(outputBuffer, outputShape[1], outputShape[2])
+                
+                FileOutputStream(outputFrame).use { out ->
+                    upscaledBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                }
+                upscaledBitmap.recycle()
+            } finally {
+                bitmap.recycle()
             }
         } catch (e: Exception) {
-            simulateUpscale(inputFrame, outputFrame, scaleFactor)
+            android.util.Log.e("UpscalerBridge", "TFLite upscaling failed, falling back to bicubic: ${e.message}", e)
+            try {
+                simulateUpscale(inputFrame, outputFrame, scaleFactor)
+            } catch (fallbackError: Exception) {
+                android.util.Log.e("UpscalerBridge", "Fallback upscaling also failed: ${fallbackError.message}", fallbackError)
+                throw fallbackError
+            }
         }
     }
 
     private fun simulateUpscale(inputFrame: File, outputFrame: File, scaleFactor: Int) {
-        val bitmap = BitmapFactory.decodeFile(inputFrame.absolutePath)
-        val scaled = Bitmap.createScaledBitmap(
-            bitmap,
-            bitmap.width * scaleFactor,
-            bitmap.height * scaleFactor,
-            true
-        )
-        FileOutputStream(outputFrame).use { out ->
-            scaled.compress(Bitmap.CompressFormat.PNG, 100, out)
+        var bitmap: Bitmap? = null
+        var scaled: Bitmap? = null
+        try {
+            bitmap = BitmapFactory.decodeFile(inputFrame.absolutePath)
+                ?: throw IllegalArgumentException("Failed to decode bitmap from ${inputFrame.absolutePath}")
+            
+            val newWidth = bitmap.width * scaleFactor
+            val newHeight = bitmap.height * scaleFactor
+            
+            android.util.Log.d("UpscalerBridge", "Bicubic upscaling: ${bitmap.width}x${bitmap.height} -> ${newWidth}x${newHeight}")
+            
+            scaled = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+            
+            FileOutputStream(outputFrame).use { out ->
+                scaled.compress(Bitmap.CompressFormat.PNG, 100, out)
+            }
+        } finally {
+            scaled?.recycle()
+            bitmap?.recycle()
         }
-        scaled.recycle()
-        bitmap.recycle()
     }
 
     private fun bitmapToByteBuffer(bitmap: Bitmap): ByteBuffer {
@@ -355,25 +446,34 @@ class UpscalerBridge(private val activity: FlutterActivity) :
     }
 
     private suspend fun encodeVideo(framesDir: File, originalVideo: File, outputFile: File) = withContext(Dispatchers.IO) {
-        val ffmpeg = bootstrapper.ensureExecutable(BinaryAsset.FFMPEG)
-        val process = ProcessBuilder(
-            ffmpeg.absolutePath,
-            "-framerate", "30",
-            "-i", "${framesDir.absolutePath}/frame_%04d.png",
-            "-i", originalVideo.absolutePath,
-            "-map", "0:v",
-            "-map", "1:a?",
-            "-c:v", "libx264",
-            "-preset", "medium",
-            "-crf", "18",
-            "-c:a", "copy",
-            "-pix_fmt", "yuv420p",
-            outputFile.absolutePath
-        ).redirectErrorStream(true).start()
+        try {
+            val ffmpeg = bootstrapper.ensureExecutable(BinaryAsset.FFMPEG)
+            android.util.Log.d("UpscalerBridge", "Using FFmpeg for encoding: ${ffmpeg.absolutePath}")
+            
+            val process = ProcessBuilder(
+                ffmpeg.absolutePath,
+                "-framerate", "30",
+                "-i", "${framesDir.absolutePath}/frame_%04d.png",
+                "-i", originalVideo.absolutePath,
+                "-map", "0:v",
+                "-map", "1:a?",
+                "-c:v", "libx264",
+                "-preset", "medium",
+                "-crf", "18",
+                "-c:a", "copy",
+                "-pix_fmt", "yuv420p",
+                outputFile.absolutePath
+            ).redirectErrorStream(true).start()
 
-        val exitCode = process.waitFor()
-        if (exitCode != 0) {
-            throw RuntimeException("FFmpeg video encoding failed with code $exitCode")
+            val exitCode = process.waitFor()
+            if (exitCode != 0) {
+                android.util.Log.e("UpscalerBridge", "FFmpeg video encoding failed with exit code $exitCode")
+                throw RuntimeException("FFmpeg video encoding failed with code $exitCode")
+            }
+            android.util.Log.d("UpscalerBridge", "Video encoding completed successfully")
+        } catch (e: Exception) {
+            android.util.Log.e("UpscalerBridge", "Error during video encoding: ${e.message}", e)
+            throw e
         }
     }
 

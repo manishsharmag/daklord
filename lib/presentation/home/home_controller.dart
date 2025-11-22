@@ -180,7 +180,24 @@ class HomeController extends StateNotifier<HomeState> {
         return;
       }
       final url = (state.normalizedUrl ?? state.url).trim();
-      final downloadFolder = _ref.read(downloadsFolderPathProvider);
+
+      // Get the download folder - handle both sync and async providers
+      final option = _ref.read(downloadsFolderOptionProvider);
+      String? downloadFolder;
+
+      if (option == 'custom') {
+        // For custom folders, we need to await the async provider
+        try {
+          final customPathAsync = await _ref.read(customDownloadsFolderPathAsyncProvider.future);
+          downloadFolder = customPathAsync;
+        } catch (_) {
+          downloadFolder = null;
+        }
+      } else {
+        // For preset options, use the sync provider
+        downloadFolder = _ref.read(downloadsFolderPathProvider);
+      }
+
       final DownloadTask task = await _repository.enqueueDownload(
         url,
         downloadFolder: downloadFolder,
