@@ -442,6 +442,19 @@ class YtDlpMetadataExtractor(
     private fun runCommand(url: String): String? {
         return try {
             val binary = bootstrapper.ensureExecutable(BinaryAsset.YT_DLP)
+            
+            // Additional verification of yt-dlp binary
+            android.util.Log.d("DownloadPipeline", "yt-dlp binary path: ${binary.absolutePath}")
+            android.util.Log.d("DownloadPipeline", "yt-dlp binary exists: ${binary.exists()}")
+            android.util.Log.d("DownloadPipeline", "yt-dlp binary canExecute: ${binary.canExecute()}")
+            android.util.Log.d("DownloadPipeline", "yt-dlp binary size: ${binary.length()} bytes")
+            
+            if (!binary.canExecute()) {
+                val errorMsg = "yt-dlp binary is not executable: ${binary.absolutePath}"
+                android.util.Log.e("DownloadPipeline", errorMsg)
+                return null
+            }
+            
             val process = ProcessBuilder(binary.absolutePath, "--dump-json", url)
                 .redirectErrorStream(true)
                 .start()
@@ -657,6 +670,19 @@ class ScopedDownloadPipeline(
     private fun downloadWithYtDlp(url: String, output: File, onProgress: (Double, Int) -> Unit): DownloadAttempt {
         return try {
             val binary = bootstrapper.ensureExecutable(BinaryAsset.YT_DLP)
+            
+            // Additional verification of yt-dlp binary
+            android.util.Log.d("DownloadPipeline", "yt-dlp binary path: ${binary.absolutePath}")
+            android.util.Log.d("DownloadPipeline", "yt-dlp binary exists: ${binary.exists()}")
+            android.util.Log.d("DownloadPipeline", "yt-dlp binary canExecute: ${binary.canExecute()}")
+            android.util.Log.d("DownloadPipeline", "yt-dlp binary size: ${binary.length()} bytes")
+            
+            if (!binary.canExecute()) {
+                val errorMsg = "yt-dlp binary is not executable: ${binary.absolutePath}"
+                android.util.Log.e("DownloadPipeline", errorMsg)
+                return DownloadAttempt(false, errorMsg)
+            }
+            
             val process = ProcessBuilder(
                 binary.absolutePath,
                 "--no-check-certificate",
@@ -756,6 +782,19 @@ class ScopedDownloadPipeline(
             android.util.Log.d("DownloadPipeline", "Starting FFmpeg encoding: ${input.absolutePath} -> ${output.absolutePath}")
             
             val binary = bootstrapper.ensureExecutable(BinaryAsset.FFMPEG)
+            
+            // Additional verification of FFmpeg binary
+            android.util.Log.d("DownloadPipeline", "FFmpeg binary path: ${binary.absolutePath}")
+            android.util.Log.d("DownloadPipeline", "FFmpeg binary exists: ${binary.exists()}")
+            android.util.Log.d("DownloadPipeline", "FFmpeg binary canExecute: ${binary.canExecute()}")
+            android.util.Log.d("DownloadPipeline", "FFmpeg binary size: ${binary.length()} bytes")
+            
+            if (!binary.canExecute()) {
+                val errorMsg = "FFmpeg binary is not executable: ${binary.absolutePath}"
+                android.util.Log.e("DownloadPipeline", errorMsg)
+                return EncodingResult(false, errorMsg)
+            }
+            
             val process = ProcessBuilder(
                 binary.absolutePath,
                 "-y",

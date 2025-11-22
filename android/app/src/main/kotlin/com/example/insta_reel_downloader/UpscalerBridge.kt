@@ -314,7 +314,18 @@ class UpscalerBridge(private val activity: FlutterActivity) :
     private suspend fun extractFrames(inputFile: File, outputDir: File) = withContext(Dispatchers.IO) {
         try {
             val ffmpeg = bootstrapper.ensureExecutable(BinaryAsset.FFMPEG)
-            android.util.Log.d("UpscalerBridge", "Using FFmpeg: ${ffmpeg.absolutePath}")
+            
+            // Additional verification of FFmpeg binary
+            android.util.Log.d("UpscalerBridge", "FFmpeg binary path: ${ffmpeg.absolutePath}")
+            android.util.Log.d("UpscalerBridge", "FFmpeg binary exists: ${ffmpeg.exists()}")
+            android.util.Log.d("UpscalerBridge", "FFmpeg binary canExecute: ${ffmpeg.canExecute()}")
+            android.util.Log.d("UpscalerBridge", "FFmpeg binary size: ${ffmpeg.length()} bytes")
+            
+            if (!ffmpeg.canExecute()) {
+                val errorMsg = "FFmpeg binary is not executable: ${ffmpeg.absolutePath}"
+                android.util.Log.e("UpscalerBridge", errorMsg)
+                throw RuntimeException(errorMsg)
+            }
             
             val process = ProcessBuilder(
                 ffmpeg.absolutePath,
@@ -448,7 +459,18 @@ class UpscalerBridge(private val activity: FlutterActivity) :
     private suspend fun encodeVideo(framesDir: File, originalVideo: File, outputFile: File) = withContext(Dispatchers.IO) {
         try {
             val ffmpeg = bootstrapper.ensureExecutable(BinaryAsset.FFMPEG)
-            android.util.Log.d("UpscalerBridge", "Using FFmpeg for encoding: ${ffmpeg.absolutePath}")
+            
+            // Additional verification of FFmpeg binary
+            android.util.Log.d("UpscalerBridge", "FFmpeg binary path: ${ffmpeg.absolutePath}")
+            android.util.Log.d("UpscalerBridge", "FFmpeg binary exists: ${ffmpeg.exists()}")
+            android.util.Log.d("UpscalerBridge", "FFmpeg binary canExecute: ${ffmpeg.canExecute()}")
+            android.util.Log.d("UpscalerBridge", "FFmpeg binary size: ${ffmpeg.length()} bytes")
+            
+            if (!ffmpeg.canExecute()) {
+                val errorMsg = "FFmpeg binary is not executable: ${ffmpeg.absolutePath}"
+                android.util.Log.e("UpscalerBridge", errorMsg)
+                throw RuntimeException(errorMsg)
+            }
             
             val process = ProcessBuilder(
                 ffmpeg.absolutePath,
