@@ -169,35 +169,7 @@ android.nonTransitiveRClass=false
 EOF
 fi
 
-# 6. Create jniLibs directory structure
-log_info "Setting up jniLibs directory structure..."
-mkdir -p "$JNILIBS_DIR/armeabi-v7a"
-mkdir -p "$JNILIBS_DIR/arm64-v8a"
-mkdir -p "$JNILIBS_DIR/x86_64"
-
-# Create placeholder .so files (these will be replaced by actual binaries later)
-create_placeholder_so() {
-    local so_file="$1"
-    if [ ! -f "$so_file" ] || [ $(stat -f%z "$so_file" 2>/dev/null || stat -c%s "$so_file" 2>/dev/null) -lt 1000 ]; then
-        # Create a minimal valid ELF file header placeholder
-        echo "Creating placeholder: $so_file"
-        # This creates a tiny but valid-looking native library placeholder
-        printf '\x7fELF' > "$so_file"
-        # Add some padding to make it look more realistic (but keep it small)
-        dd if=/dev/zero bs=1024 count=4 >> "$so_file" 2>/dev/null
-    fi
-}
-
-# Note: These are placeholders. Real native libraries would be much larger.
-# The BinaryBootstrapper in Kotlin will handle runtime extraction from assets.
-for arch in armeabi-v7a arm64-v8a x86_64; do
-    create_placeholder_so "$JNILIBS_DIR/$arch/libytdlp_bridge.so"
-    create_placeholder_so "$JNILIBS_DIR/$arch/libffmpeg_bridge.so"
-done
-
-log_info "jniLibs directory structure created"
-
-# 7. Validate TensorFlow Lite availability
+# 6. Validate TensorFlow Lite availability
 log_info "Validating TensorFlow Lite dependencies..."
 cd "$ANDROID_DIR"
 if [ -x ./gradlew ]; then
@@ -210,13 +182,13 @@ else
     log_warn "Gradle wrapper not found. Skipping dependency validation."
 fi
 
-# 8. Clean build artifacts
+# 7. Clean build artifacts
 log_info "Cleaning build artifacts..."
 cd "$ANDROID_DIR"
 rm -rf .gradle build app/build app/.cxx
 log_info "Build artifacts cleaned"
 
-# 9. Flutter clean (if Flutter is available)
+# 8. Flutter clean (if Flutter is available)
 if [ -n "$FLUTTER_SDK" ] && [ -d "$FLUTTER_SDK" ]; then
     log_info "Running Flutter clean..."
     cd "$PROJECT_ROOT"
@@ -229,17 +201,12 @@ if [ -n "$FLUTTER_SDK" ] && [ -d "$FLUTTER_SDK" ]; then
     fi
 fi
 
-# 10. Validate setup
+# 9. Validate setup
 log_info "Validating setup..."
 VALIDATION_PASSED=true
 
 if [ ! -f "$LOCAL_PROPS" ]; then
     log_error "local.properties not created"
-    VALIDATION_PASSED=false
-fi
-
-if [ ! -d "$JNILIBS_DIR/arm64-v8a" ]; then
-    log_error "jniLibs directory structure not created properly"
     VALIDATION_PASSED=false
 fi
 
@@ -258,7 +225,6 @@ if [ "$VALIDATION_PASSED" = true ]; then
     echo "  - Flutter SDK: ${FLUTTER_SDK:-Not found}"
     echo "  - Android SDK: $ANDROID_SDK"
     echo "  - NDK: ${NDK_VERSION:-Default from Flutter}"
-    echo "  - jniLibs: Created with placeholders"
     echo ""
     echo "Next steps:"
     echo "  1. Build the debug APK:"

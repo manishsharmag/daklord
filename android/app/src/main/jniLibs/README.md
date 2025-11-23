@@ -13,86 +13,49 @@ jniLibs/
 
 ## Libraries
 
-Each architecture directory should contain:
+yt-dlp is the only native library needed for this app:
 
-- `libytdlp_bridge.so` - yt-dlp downloader engine
-- `libffmpeg_bridge.so` - FFmpeg for video processing
+- `libytdlp_bridge.so` - yt-dlp downloader engine (required for functionality)
 
-## Automatic Setup
-
-These libraries are automatically created as placeholders by:
-
-1. The setup script: `bash scripts/setup-android-env.sh`
-2. The Gradle build task: `validateNativeLibs` (runs before compilation)
+Note: FFmpeg is now provided by the `ffmpeg_kit_flutter_new` package and does not need manual setup.
 
 ## Runtime Loading
 
-The `BinaryBootstrapper` class handles runtime extraction and execution:
+The app automatically loads the native library from the jniLibs directory:
 
-1. First, it tries to load from `jniLibs/` (compiled into APK)
-2. If not found, it falls back to `assets/downloader/` stubs
-3. Extracts to app's private directory and makes executable
+1. Android extracts native libraries to `/data/app/{package}/lib/{arch}/` during app installation
+2. The app accesses it directly via `context.applicationInfo.nativeLibraryDir`
+3. No manual extraction or chmod is required
 
-## Git Tracking
+## Setting up yt-dlp
 
-The `.so` files are not tracked in git (see `.gitignore`). They are regenerated:
+To use this app with yt-dlp functionality:
 
-- By the setup script on first setup
-- By Gradle before each build if missing or corrupted
+1. Obtain a compiled yt-dlp binary for Android
+2. Place it in the appropriate architecture directories as `libytdlp_bridge.so`
+3. Rebuild the APK - the binary will be included automatically
 
-## Manual Creation
-
-If you need to manually create the directories:
-
+Example:
 ```bash
-cd android/app/src/main/jniLibs
-mkdir -p armeabi-v7a arm64-v8a x86_64
-
-# Create placeholder files (will be replaced during build)
-for arch in armeabi-v7a arm64-v8a x86_64; do
-    echo -ne '\x7fELF' > $arch/libytdlp_bridge.so
-    echo -ne '\x7fELF' > $arch/libffmpeg_bridge.so
-done
+cp yt-dlp-android-arm64 android/app/src/main/jniLibs/arm64-v8a/libytdlp_bridge.so
+cp yt-dlp-android-armv7 android/app/src/main/jniLibs/armeabi-v7a/libytdlp_bridge.so
+cp yt-dlp-android-x86_64 android/app/src/main/jniLibs/x86_64/libytdlp_bridge.so
 ```
-
-## Validation
-
-To check if libraries are valid:
-
-```bash
-cd android
-./gradlew validateNativeLibs
-```
-
-This will report any missing or corrupted libraries and fix them automatically.
-
-## Size Guidelines
-
-- **Placeholder/Stub**: ~4 KB (auto-generated)
-- **Real yt-dlp**: 10-50 MB (if you have the actual binary)
-- **Real FFmpeg**: 20-80 MB (if you have the actual binary)
-
-Libraries smaller than 1 KB are considered corrupted and will be auto-replaced.
 
 ## Production Deployment
 
-For production builds with real native binaries:
+For production builds with yt-dlp:
 
-1. Obtain or build the actual `yt-dlp` and `ffmpeg` binaries for Android
-2. Rename them to `libytdlp_bridge.so` and `libffmpeg_bridge.so`
+1. Obtain or build the actual `yt-dlp` binary for Android
+2. Rename to `libytdlp_bridge.so`
 3. Place in the appropriate architecture directories
-4. Build the APK - they will be included automatically
+4. Build the APK - it will be included automatically
 
-## Troubleshooting
+## Size Guidelines
 
-**Problem**: Build fails with "native library not found"
+- **yt-dlp**: Typically 10-50 MB depending on compilation options
+- **FFmpeg**: No longer needed as it's provided by ffmpeg_kit_flutter_new package
 
-**Solution**: Run `./gradlew validateNativeLibs` or re-run the setup script.
+## Git Tracking
 
-**Problem**: Libraries are 120 bytes and corrupt
-
-**Solution**: Delete them and run `./gradlew validateNativeLibs` to regenerate.
-
-**Problem**: APK size is very large
-
-**Solution**: This is expected if using real native binaries. Consider using APK splits by ABI to reduce per-device download size.
+The `.so` files are not tracked in git (see `.gitignore`) as they contain large binary executables.

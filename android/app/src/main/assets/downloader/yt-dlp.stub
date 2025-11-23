@@ -1,4 +1,0 @@
-#!/system/bin/env sh
-# Placeholder stub for the bundled yt-dlp binary. The native bootstrapper
-# copies this file when architecture-specific assets are unavailable.
-echo "yt-dlp stub invoked"
