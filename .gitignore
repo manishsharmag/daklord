@@ -58,3 +58,13 @@ app.*.map.json
 *.ncnn
 *.param
 *.bin
+
+# Python and Chaquopy
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+/android/app/build/generated/python/
+/android/app/build/intermediates/python/
+/android/app/build/python/
+/android/app/.chaquopy/

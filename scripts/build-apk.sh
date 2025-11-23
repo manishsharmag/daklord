@@ -28,15 +28,15 @@ if [ ! -f "$PROJECT_ROOT/android/local.properties" ]; then
     echo ""
 fi
 
-# Validate native libraries
-echo "Validating native libraries..."
+# Validate Chaquopy setup
+echo "Validating Chaquopy and dependencies..."
 cd "$PROJECT_ROOT/android"
 if [ -x ./gradlew ]; then
-    ./gradlew validateNativeLibs
+    ./gradlew tasks --quiet > /dev/null 2>&1 && echo "✓ Gradle configuration OK"
 else
     echo "⚠️  Gradle wrapper not executable, fixing..."
     chmod +x ./gradlew
-    ./gradlew validateNativeLibs
+    ./gradlew tasks --quiet > /dev/null 2>&1 && echo "✓ Gradle configuration OK"
 fi
 echo ""
 

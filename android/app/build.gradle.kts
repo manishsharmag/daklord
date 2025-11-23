@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
+    id("com.chaquo.python")
 }
 
 val localPropertiesFile = File(rootProject.projectDir, "local.properties")
@@ -46,6 +47,19 @@ android {
         
         ndk {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86_64"))
+        }
+
+        python {
+            version = "3.11"
+            pip {
+                install("yt-dlp==2024.12.23")
+                install("requests==2.32.3")
+                install("mutagen==1.47.0")
+                install("brotli==1.1.0")
+                install("certifi==2024.8.30")
+                install("websockets==13.1")
+                install("pycryptodomex==3.20.0")
+            }
         }
     }
 
