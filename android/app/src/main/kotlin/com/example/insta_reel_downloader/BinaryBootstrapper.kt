@@ -6,7 +6,7 @@ import java.io.IOException
 
 enum class BinaryAsset(val jniName: String, val outputName: String) {
     YT_DLP("libytdlp_bridge.so", "yt-dlp"),
-    FFMPEG("libffmpeg_bridge.so", "ffmpeg"),
+    // FFmpeg is now provided by ffmpeg_kit_flutter_new dependency
 }
 
 class BinaryBootstrapper(private val context: Context) {
@@ -47,18 +47,19 @@ class BinaryBootstrapper(private val context: Context) {
                 appendLine("Binary not found at expected location")
             }
             appendLine()
-            appendLine("CRITICAL: This app requires REAL FFmpeg and yt-dlp binaries to function.")
-            appendLine("The repository contains only placeholder stub files (4 KB).")
+            appendLine("CRITICAL: This app requires the real yt-dlp binary to function.")
+            appendLine("FFmpeg is provided by ffmpeg_kit_flutter_new dependency and does not need manual setup.")
+            appendLine("The repository contains only placeholder stub files (4 KB) for yt-dlp.")
             appendLine()
             appendLine("To fix this issue:")
-            appendLine("1. See FFMPEG_BINARY_SETUP.md for detailed instructions")
-            appendLine("2. Or use FFMPEG_QUICK_SETUP.md for the fastest path")
+            appendLine("1. See FFMPEG_BINARY_SETUP.md for detailed instructions on obtaining yt-dlp")
+            appendLine("2. Place the yt-dlp binary at android/app/src/main/jniLibs/<abi>/libytdlp_bridge.so")
             appendLine()
             appendLine("Possible causes:")
-            appendLine("1. APK does not contain real native libraries (stubs only)")
+            appendLine("1. APK does not contain real yt-dlp binary (stub only)")
             appendLine("2. App was not properly installed (reinstall required)")
             appendLine("3. Device storage is full (clear space and reinstall)")
-            appendLine("4. APK does not contain native libraries for device architecture")
+            appendLine("4. APK does not contain yt-dlp binary for device architecture")
             appendLine("5. Filesystem does not have execute permissions")
         }
         

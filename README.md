@@ -1,14 +1,15 @@
 # Insta Reel Downloader
 
-A Flutter + Kotlin application that downloads Instagram reels on-device, stores them locally, and optionally upscales them with Real-ESRGAN using TensorFlow Lite, FFmpeg, and yt-dlp binaries bundled per-ABI. The app follows a clean `core/data/domain/presentation` architecture, uses Riverpod for state management, and exposes a Material 3 UI with Home, Downloads, and Settings tabs.
+A Flutter + Kotlin application that downloads Instagram reels on-device, stores them locally, and optionally upscales them with Real-ESRGAN using TensorFlow Lite and yt-dlp. FFmpeg is provided via [ffmpeg_kit_flutter_new](https://pub.dev/packages/ffmpeg_kit_flutter_new) for robust video processing. The app follows a clean `core/data/domain/presentation` architecture, uses Riverpod for state management, and exposes a Material 3 UI with Home, Downloads, and Settings tabs.
 
-> ⚠️ **Important:** This app requires **actual FFmpeg and yt-dlp binaries** to function. The repository contains only placeholder stub files (4 KB each). To use the app, you must obtain the real binaries and place them in `android/app/src/main/jniLibs/`. 
+> ⚠️ **Important:** This app requires **an actual yt-dlp binary** to function. The repository contains only a placeholder stub file (4 KB). FFmpeg is now automatically provided via the FFmpeg Kit dependency. To use the app, you must obtain the real yt-dlp binary and place it in `android/app/src/main/jniLibs/`. 
 >
 > **👉 Quick Start:** See [`FFMPEG_DOCUMENTATION_INDEX.md`](FFMPEG_DOCUMENTATION_INDEX.md) for organized guides by reading preference
 
 ## Highlights
 - **No backend services** – URL validation, metadata extraction, downloading, and upscaling all occur locally via platform channels.
-- **Native binary pipeline** – Kotlin bridges bootstrap yt-dlp and FFmpeg executables from `jniLibs`, keeping the Flutter layer lightweight.
+- **FFmpeg Kit integration** – FFmpeg is automatically managed via [ffmpeg_kit_flutter_new](https://pub.dev/packages/ffmpeg_kit_flutter_new) dependency, no manual binary management required.
+- **Lightweight yt-dlp bootstrapping** – Only yt-dlp binary is bootstrapped from `jniLibs`, keeping the Flutter layer lightweight.
 - **On-device super-resolution** – UpscalerBridge loads a TFLite FP16 Real-ESRGAN model (GPU/NNAPI accelerated) and falls back to bicubic scaling if unavailable.
 - **Download history & offline UX** – Movies are written to `Android/data/<appId>/files/Movies`, and upscaled copies are stored under the original directory.
 
@@ -66,7 +67,7 @@ android/
 ```
 
 ## Native Requirements
-- Place production-ready yt-dlp & FFmpeg binaries under `android/app/src/main/jniLibs/<abi>/` (matching names declared in `BinaryAsset`).
+- Place production-ready **yt-dlp binary** under `android/app/src/main/jniLibs/<abi>/libytdlp_bridge.so` (FFmpeg is now provided by FFmpeg Kit dependency).
 - Provide a converted Real-ESRGAN TFLite FP16 model at `android/app/src/main/assets/upscaler/esrgan_fp16.tflite` for hardware-accelerated upscaling.
 
 Refer to [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for detailed setup, environment variables, Gradle commands, and verification steps.
