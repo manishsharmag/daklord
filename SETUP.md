@@ -37,12 +37,11 @@ The setup script automatically:
 3. ✅ **Detects/Installs NDK** - Finds existing NDK or attempts installation via sdkmanager
 4. ✅ **Creates local.properties** - Configures SDK paths for Gradle
 5. ✅ **Updates gradle.properties** - Adds build optimization flags
-6. ✅ **Sets up jniLibs** - Creates native library directory structure with placeholders (for yt-dlp only)
-7. ✅ **Validates TensorFlow Lite** - Checks that TensorFlow Lite dependencies are available
-8. ✅ **Validates FFmpeg Kit** - Ensures FFmpeg Kit dependency is available via Gradle
-9. ✅ **Cleans build artifacts** - Removes any corrupted cache or build files
-10. ✅ **Refreshes Flutter dependencies** - Runs `flutter clean` and `flutter pub get`
-11. ✅ **Validates setup** - Ensures all configurations are correct
+6. ✅ **Validates TensorFlow Lite** - Checks that TensorFlow Lite dependencies are available
+7. ✅ **Validates FFmpeg Kit** - Ensures FFmpeg Kit dependency is available via Gradle
+8. ✅ **Cleans build artifacts** - Removes any corrupted cache or build files
+9. ✅ **Refreshes Flutter dependencies** - Runs `flutter clean` and `flutter pub get`
+10. ✅ **Validates setup** - Ensures all configurations are correct
 
 ## After Setup
 
@@ -69,19 +68,12 @@ cd android
 ./gradlew assembleRelease
 ```
 
-## Self-Healing Build System
+## Build Tasks
 
-The project includes self-healing Gradle tasks that automatically fix common issues:
-
-### Auto-Validation on Every Build
-
-The build system automatically validates native libraries before compilation. If any `.so` files are missing or corrupted (< 1KB), they are automatically recreated as placeholders.
-
-### Manual Validation Tasks
+The project provides several Gradle tasks for building:
 
 ```bash
 cd android
-./gradlew validateNativeLibs      # Check/fix native libraries
 ./gradlew validateTensorFlowLite  # Check TensorFlow Lite dependencies
 ./gradlew setupAndBuild           # Validate and build in one command
 ./gradlew fullCleanBuild          # Deep clean and rebuild
@@ -167,7 +159,7 @@ The project now uses FFmpeg Kit for FFmpeg, which is automatically managed via G
 - **libytdlp_bridge.so** - yt-dlp downloader engine (requires manual binary installation)
 - **FFmpeg** - Now provided by [ffmpeg_kit_flutter_new](https://pub.dev/packages/ffmpeg_kit_flutter_new) dependency (automatic via Gradle)
 
-The `BinaryBootstrapper` class handles runtime extraction and execution of yt-dlp only.
+The app directly accesses yt-dlp from the native library directory without needing bootstrap logic.
 
 ## TensorFlow Lite & FFmpeg Kit Integration
 

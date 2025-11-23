@@ -58,10 +58,9 @@ class DownloaderBridge(private val activity: FlutterActivity) :
         .build()
     private val urlResolver = InstagramUrlResolver(httpClient)
     private val validator = ReelUrlValidator(urlResolver)
-    private val bootstrapper = BinaryBootstrapper(activity.applicationContext)
     private val graphqlClient = InstagramGraphqlClient(httpClient, urlResolver)
-    private val metadataExtractor = YtDlpMetadataExtractor(bootstrapper, graphqlClient)
-    private val downloadPipeline = ScopedDownloadPipeline(bootstrapper, httpClient, activity.applicationContext)
+    private val metadataExtractor = YtDlpMetadataExtractor(activity.applicationContext, graphqlClient)
+    private val downloadPipeline = ScopedDownloadPipeline(activity.applicationContext, httpClient)
     private val historyStore = DownloadHistoryStore(activity.applicationContext)
     private val permissionHelper = StoragePermissionHelper(activity)
     private val tasks = ConcurrentHashMap<String, NativeDownloadTask>()
@@ -428,7 +427,7 @@ data class NativeDownloadTask(
 }
 
 class YtDlpMetadataExtractor(
-    private val bootstrapper: BinaryBootstrapper,
+    private val context: android.content.Context,
     private val graphqlClient: InstagramGraphqlClient,
 ) {
     suspend fun extract(url: String): ReelMetadata = withContext(Dispatchers.IO) {
@@ -443,27 +442,30 @@ class YtDlpMetadataExtractor(
 
     private fun runCommand(url: String): String? {
         return try {
-            val binary = bootstrapper.ensureExecutable(BinaryAsset.YT_DLP)
-            
-            // Additional verification of yt-dlp binary
-            android.util.Log.d("DownloadPipeline", "yt-dlp binary path: ${binary.absolutePath}")
-            android.util.Log.d("DownloadPipeline", "yt-dlp binary exists: ${binary.exists()}")
-            android.util.Log.d("DownloadPipeline", "yt-dlp binary canExecute: ${binary.canExecute()}")
-            android.util.Log.d("DownloadPipeline", "yt-dlp binary size: ${binary.length()} bytes")
-            
-            if (!binary.canExecute()) {
-                val errorMsg = "yt-dlp binary is not executable: ${binary.absolutePath}"
-                android.util.Log.e("DownloadPipeline", errorMsg)
+            val binaryPath = findYtDlpBinary()
+            if (binaryPath == null) {
+                android.util.Log.e("YtDlpMetadataExtractor", "yt-dlp binary not found")
                 return null
             }
             
-            val process = ProcessBuilder(binary.absolutePath, "--dump-json", url)
+            android.util.Log.d("YtDlpMetadataExtractor", "yt-dlp binary path: $binaryPath")
+            
+            val process = ProcessBuilder(binaryPath, "--dump-json", url)
                 .redirectErrorStream(true)
                 .start()
             val output = process.inputStream.bufferedReader().use { it.readText() }
             val finished = process.waitFor(8, TimeUnit.SECONDS)
             if (finished && process.exitValue() == 0 && output.isNotBlank()) output else null
         } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun findYtDlpBinary(): String? {
+        val nativeLibDir = context.applicationInfo.nativeLibraryDir
+        return if (nativeLibDir != null) {
+            File(nativeLibDir, "libytdlp_bridge.so").takeIf { it.exists() && it.canExecute() }?.absolutePath
+        } else {
             null
         }
     }
@@ -561,9 +563,8 @@ class YtDlpMetadataExtractor(
 }
 
 class ScopedDownloadPipeline(
-    private val bootstrapper: BinaryBootstrapper,
-    private val httpClient: OkHttpClient,
     private val context: Context,
+    private val httpClient: OkHttpClient,
 ) {
     suspend fun run(
         taskId: String,
@@ -695,22 +696,17 @@ class ScopedDownloadPipeline(
 
     private fun downloadWithYtDlp(url: String, output: File, onProgress: (Double, Int) -> Unit): DownloadAttempt {
         return try {
-            val binary = bootstrapper.ensureExecutable(BinaryAsset.YT_DLP)
-            
-            // Additional verification of yt-dlp binary
-            android.util.Log.d("DownloadPipeline", "yt-dlp binary path: ${binary.absolutePath}")
-            android.util.Log.d("DownloadPipeline", "yt-dlp binary exists: ${binary.exists()}")
-            android.util.Log.d("DownloadPipeline", "yt-dlp binary canExecute: ${binary.canExecute()}")
-            android.util.Log.d("DownloadPipeline", "yt-dlp binary size: ${binary.length()} bytes")
-            
-            if (!binary.canExecute()) {
-                val errorMsg = "yt-dlp binary is not executable: ${binary.absolutePath}"
+            val binaryPath = findYtDlpBinary()
+            if (binaryPath == null) {
+                val errorMsg = "yt-dlp binary not found"
                 android.util.Log.e("DownloadPipeline", errorMsg)
                 return DownloadAttempt(false, errorMsg)
             }
             
+            android.util.Log.d("DownloadPipeline", "yt-dlp binary path: $binaryPath")
+            
             val process = ProcessBuilder(
-                binary.absolutePath,
+                binaryPath,
                 "--no-check-certificate",
                 "--no-warnings",
                 "--retries", "5",
@@ -926,6 +922,15 @@ class ScopedDownloadPipeline(
         }
 
         return sanitized
+    }
+
+    private fun findYtDlpBinary(): String? {
+        val nativeLibDir = context.applicationInfo.nativeLibraryDir
+        return if (nativeLibDir != null) {
+            File(nativeLibDir, "libytdlp_bridge.so").takeIf { it.exists() && it.canExecute() }?.absolutePath
+        } else {
+            null
+        }
     }
 
     private data class DownloadAttempt(val success: Boolean, val error: String?)

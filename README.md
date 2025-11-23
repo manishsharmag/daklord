@@ -2,14 +2,12 @@
 
 A Flutter + Kotlin application that downloads Instagram reels on-device, stores them locally, and optionally upscales them with Real-ESRGAN using TensorFlow Lite and yt-dlp. FFmpeg is provided via [ffmpeg_kit_flutter_new](https://pub.dev/packages/ffmpeg_kit_flutter_new) for robust video processing. The app follows a clean `core/data/domain/presentation` architecture, uses Riverpod for state management, and exposes a Material 3 UI with Home, Downloads, and Settings tabs.
 
-> ⚠️ **Important:** This app requires **an actual yt-dlp binary** to function. The repository contains only a placeholder stub file (4 KB). FFmpeg is now automatically provided via the FFmpeg Kit dependency. To use the app, you must obtain the real yt-dlp binary and place it in `android/app/src/main/jniLibs/`. 
->
-> **👉 Quick Start:** See [`FFMPEG_DOCUMENTATION_INDEX.md`](FFMPEG_DOCUMENTATION_INDEX.md) for organized guides by reading preference
+> ⚠️ **Important:** This app requires **an actual yt-dlp binary** to function. To use the app, you must obtain the real yt-dlp binary and place it in `android/app/src/main/jniLibs/`. FFmpeg is automatically provided via the FFmpeg Kit dependency.
 
 ## Highlights
 - **No backend services** – URL validation, metadata extraction, downloading, and upscaling all occur locally via platform channels.
 - **FFmpeg Kit integration** – FFmpeg is automatically managed via [ffmpeg_kit_flutter_new](https://pub.dev/packages/ffmpeg_kit_flutter_new) dependency, no manual binary management required.
-- **Lightweight yt-dlp bootstrapping** – Only yt-dlp binary is bootstrapped from `jniLibs`, keeping the Flutter layer lightweight.
+- **Streamlined yt-dlp integration** – yt-dlp binary is included from `jniLibs` and directly executed without bootstrap overhead.
 - **On-device super-resolution** – UpscalerBridge loads a TFLite FP16 Real-ESRGAN model (GPU/NNAPI accelerated) and falls back to bicubic scaling if unavailable.
 - **Download history & offline UX** – Movies are written to `Android/data/<appId>/files/Movies`, and upscaled copies are stored under the original directory.
 
@@ -62,8 +60,8 @@ lib/
   presentation/    # Home, Downloads, Settings views & controllers
 android/
   app/src/main/kotlin/  # DownloaderBridge, UpscalerBridge, native helpers
-  app/src/main/assets/  # yt-dlp/FFmpeg stubs, upscaler model placeholder
-  app/src/main/jniLibs/ # ABI-specific native binaries
+  app/src/main/assets/  # Upscaler model placeholder
+  app/src/main/jniLibs/ # ABI-specific native binaries (yt-dlp only)
 ```
 
 ## Native Requirements

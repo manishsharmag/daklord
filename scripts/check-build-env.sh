@@ -87,37 +87,6 @@ else
 fi
 echo ""
 
-# Check jniLibs
-echo "Checking native libraries..."
-JNILIBS_DIR="$PROJECT_ROOT/android/app/src/main/jniLibs"
-if [ -d "$JNILIBS_DIR" ]; then
-    check_ok "jniLibs directory exists"
-    
-    for arch in armeabi-v7a arm64-v8a x86_64; do
-        if [ -d "$JNILIBS_DIR/$arch" ]; then
-            check_ok "  - $arch directory exists"
-            
-            for lib in libytdlp_bridge.so libffmpeg_bridge.so; do
-                if [ -f "$JNILIBS_DIR/$arch/$lib" ]; then
-                    SIZE=$(stat -f%z "$JNILIBS_DIR/$arch/$lib" 2>/dev/null || stat -c%s "$JNILIBS_DIR/$arch/$lib" 2>/dev/null)
-                    if [ "$SIZE" -lt 1024 ]; then
-                        check_warn "    - $lib exists but small ($SIZE bytes) - may be placeholder"
-                    else
-                        check_ok "    - $lib exists ($SIZE bytes)"
-                    fi
-                else
-                    check_warn "    - $lib missing"
-                fi
-            done
-        else
-            check_fail "  - $arch directory missing"
-        fi
-    done
-else
-    check_fail "jniLibs directory missing (run setup script)"
-fi
-echo ""
-
 # Check Gradle
 echo "Checking Gradle..."
 if [ -f "$PROJECT_ROOT/android/gradlew" ]; then
@@ -137,11 +106,6 @@ echo ""
 echo "Checking build configuration..."
 if [ -f "$PROJECT_ROOT/android/app/build.gradle.kts" ]; then
     check_ok "build.gradle.kts exists"
-    if grep -q "validateNativeLibs" "$PROJECT_ROOT/android/app/build.gradle.kts"; then
-        check_ok "  - Self-healing tasks configured"
-    else
-        check_warn "  - Self-healing tasks not found"
-    fi
     if grep -q "tensorflow-lite" "$PROJECT_ROOT/android/app/build.gradle.kts"; then
         check_ok "  - TensorFlow Lite dependencies configured"
     else

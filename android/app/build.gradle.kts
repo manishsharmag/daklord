@@ -83,57 +83,6 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 }
 
-tasks.register("validateNativeLibs") {
-    group = "verification"
-    description = "Validates that yt-dlp native library is present and not corrupted (FFmpeg is handled by FFmpeg Kit)"
-    
-    doLast {
-        val jniLibsDir = file("src/main/jniLibs")
-        val architectures = listOf("armeabi-v7a", "arm64-v8a", "x86_64")
-        // Only validate yt-dlp - FFmpeg is now provided by ffmpeg_kit_flutter_new
-        val requiredLibs = listOf("libytdlp_bridge.so")
-        
-        var allValid = true
-        
-        architectures.forEach { arch ->
-            val archDir = File(jniLibsDir, arch)
-            if (!archDir.exists()) {
-                logger.warn("Architecture directory missing: $arch")
-                archDir.mkdirs()
-                logger.info("Created directory: ${archDir.absolutePath}")
-            }
-            
-            requiredLibs.forEach { lib ->
-                val libFile = File(archDir, lib)
-                if (!libFile.exists()) {
-                    logger.warn("Native library missing: $arch/$lib")
-                    logger.info("Creating placeholder for: $arch/$lib")
-                    createPlaceholderLib(libFile)
-                } else {
-                    val size = libFile.length()
-                    if (size < 1024) {
-                        logger.warn("Native library appears corrupted (${size} bytes): $arch/$lib")
-                        logger.info("Recreating placeholder for: $arch/$lib")
-                        libFile.delete()
-                        createPlaceholderLib(libFile)
-                    }
-                }
-            }
-        }
-        
-        logger.lifecycle("Native library validation complete. Note: FFmpeg is now provided by FFmpeg Kit dependency.")
-    }
-}
-
-fun createPlaceholderLib(file: File) {
-    file.parentFile.mkdirs()
-    file.outputStream().use { out ->
-        out.write(byteArrayOf(0x7f, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte()))
-        val padding = ByteArray(4092)
-        out.write(padding)
-    }
-}
-
 tasks.register("validateTensorFlowLite") {
     group = "verification"
     description = "Validates TensorFlow Lite dependencies are accessible"
@@ -179,15 +128,10 @@ tasks.register("cleanCorruptedCache") {
     }
 }
 
-tasks.named("preBuild") {
-    dependsOn("validateNativeLibs")
-}
-
 tasks.register("setupAndBuild") {
     group = "build"
     description = "Validates environment and builds the project"
     
-    dependsOn("validateNativeLibs")
     dependsOn("validateTensorFlowLite")
     finalizedBy("assembleDebug")
 }
