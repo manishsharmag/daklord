@@ -28,6 +28,8 @@ import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.ReturnCode
 
 private const val UPSCALER_CHANNEL = "com.insta.reel/upscaler"
 private const val UPSCALER_EVENTS = "com.insta.reel/upscaler/events"
@@ -45,7 +47,6 @@ class UpscalerBridge(private val activity: FlutterActivity) :
     private var eventSink: EventChannel.EventSink? = null
     private var interpreter: Interpreter? = null
     private var delegate: Any? = null
-    private val bootstrapper = BinaryBootstrapper(activity.applicationContext)
 
     fun start(flutterEngine: FlutterEngine) {
         commandChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UPSCALER_CHANNEL)
@@ -313,33 +314,23 @@ class UpscalerBridge(private val activity: FlutterActivity) :
 
     private suspend fun extractFrames(inputFile: File, outputDir: File) = withContext(Dispatchers.IO) {
         try {
-            val ffmpeg = bootstrapper.ensureExecutable(BinaryAsset.FFMPEG)
+            android.util.Log.d("UpscalerBridge", "Starting frame extraction using FFmpeg Kit from ${inputFile.absolutePath}")
             
-            // Additional verification of FFmpeg binary
-            android.util.Log.d("UpscalerBridge", "FFmpeg binary path: ${ffmpeg.absolutePath}")
-            android.util.Log.d("UpscalerBridge", "FFmpeg binary exists: ${ffmpeg.exists()}")
-            android.util.Log.d("UpscalerBridge", "FFmpeg binary canExecute: ${ffmpeg.canExecute()}")
-            android.util.Log.d("UpscalerBridge", "FFmpeg binary size: ${ffmpeg.length()} bytes")
+            val command = "-i \"${inputFile.absolutePath}\" -vf fps=30 \"${outputDir.absolutePath}/frame_%04d.png\""
             
-            if (!ffmpeg.canExecute()) {
-                val errorMsg = "FFmpeg binary is not executable: ${ffmpeg.absolutePath}"
-                android.util.Log.e("UpscalerBridge", errorMsg)
-                throw RuntimeException(errorMsg)
+            val session = FFmpegKit.execute(command)
+            val returnCode = session.returnCode
+            
+            if (ReturnCode.isSuccess(returnCode)) {
+                android.util.Log.d("UpscalerBridge", "Frame extraction completed successfully")
+            } else {
+                val output = session.output
+                android.util.Log.e("UpscalerBridge", "FFmpeg Kit frame extraction failed with return code: $returnCode")
+                if (output != null && output.isNotEmpty()) {
+                    android.util.Log.e("UpscalerBridge", "FFmpeg Kit output: $output")
+                }
+                throw RuntimeException("FFmpeg Kit frame extraction failed with code $returnCode")
             }
-            
-            val process = ProcessBuilder(
-                ffmpeg.absolutePath,
-                "-i", inputFile.absolutePath,
-                "-vf", "fps=30",
-                "${outputDir.absolutePath}/frame_%04d.png"
-            ).redirectErrorStream(true).start()
-
-            val exitCode = process.waitFor()
-            if (exitCode != 0) {
-                android.util.Log.e("UpscalerBridge", "FFmpeg frame extraction failed with exit code $exitCode")
-                throw RuntimeException("FFmpeg frame extraction failed with code $exitCode")
-            }
-            android.util.Log.d("UpscalerBridge", "Frame extraction completed successfully")
         } catch (e: Exception) {
             android.util.Log.e("UpscalerBridge", "Error during frame extraction: ${e.message}", e)
             throw e
@@ -458,41 +449,23 @@ class UpscalerBridge(private val activity: FlutterActivity) :
 
     private suspend fun encodeVideo(framesDir: File, originalVideo: File, outputFile: File) = withContext(Dispatchers.IO) {
         try {
-            val ffmpeg = bootstrapper.ensureExecutable(BinaryAsset.FFMPEG)
+            android.util.Log.d("UpscalerBridge", "Starting video encoding using FFmpeg Kit")
             
-            // Additional verification of FFmpeg binary
-            android.util.Log.d("UpscalerBridge", "FFmpeg binary path: ${ffmpeg.absolutePath}")
-            android.util.Log.d("UpscalerBridge", "FFmpeg binary exists: ${ffmpeg.exists()}")
-            android.util.Log.d("UpscalerBridge", "FFmpeg binary canExecute: ${ffmpeg.canExecute()}")
-            android.util.Log.d("UpscalerBridge", "FFmpeg binary size: ${ffmpeg.length()} bytes")
+            val command = "-framerate 30 -i \"${framesDir.absolutePath}/frame_%04d.png\" -i \"${originalVideo.absolutePath}\" -map 0:v -map 1:a? -c:v libx264 -preset medium -crf 18 -c:a copy -pix_fmt yuv420p \"${outputFile.absolutePath}\""
             
-            if (!ffmpeg.canExecute()) {
-                val errorMsg = "FFmpeg binary is not executable: ${ffmpeg.absolutePath}"
-                android.util.Log.e("UpscalerBridge", errorMsg)
-                throw RuntimeException(errorMsg)
+            val session = FFmpegKit.execute(command)
+            val returnCode = session.returnCode
+            
+            if (ReturnCode.isSuccess(returnCode)) {
+                android.util.Log.d("UpscalerBridge", "Video encoding completed successfully")
+            } else {
+                val output = session.output
+                android.util.Log.e("UpscalerBridge", "FFmpeg Kit video encoding failed with return code: $returnCode")
+                if (output != null && output.isNotEmpty()) {
+                    android.util.Log.e("UpscalerBridge", "FFmpeg Kit output: $output")
+                }
+                throw RuntimeException("FFmpeg Kit video encoding failed with code $returnCode")
             }
-            
-            val process = ProcessBuilder(
-                ffmpeg.absolutePath,
-                "-framerate", "30",
-                "-i", "${framesDir.absolutePath}/frame_%04d.png",
-                "-i", originalVideo.absolutePath,
-                "-map", "0:v",
-                "-map", "1:a?",
-                "-c:v", "libx264",
-                "-preset", "medium",
-                "-crf", "18",
-                "-c:a", "copy",
-                "-pix_fmt", "yuv420p",
-                outputFile.absolutePath
-            ).redirectErrorStream(true).start()
-
-            val exitCode = process.waitFor()
-            if (exitCode != 0) {
-                android.util.Log.e("UpscalerBridge", "FFmpeg video encoding failed with exit code $exitCode")
-                throw RuntimeException("FFmpeg video encoding failed with code $exitCode")
-            }
-            android.util.Log.d("UpscalerBridge", "Video encoding completed successfully")
         } catch (e: Exception) {
             android.util.Log.e("UpscalerBridge", "Error during video encoding: ${e.message}", e)
             throw e

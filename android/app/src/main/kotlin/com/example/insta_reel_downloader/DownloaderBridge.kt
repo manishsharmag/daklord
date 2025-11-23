@@ -35,6 +35,8 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.ReturnCode
 
 private const val DOWNLOADER_CHANNEL = "com.insta.reel/downloader"
 private const val DOWNLOADER_EVENTS = "com.insta.reel/downloader/events"
@@ -816,114 +818,44 @@ class ScopedDownloadPipeline(
                 return EncodingResult(false, "Cannot write to output directory - check MANAGE_EXTERNAL_STORAGE permission")
             }
             
-            android.util.Log.d("DownloadPipeline", "Starting FFmpeg encoding: ${input.absolutePath} -> ${output.absolutePath}")
+            android.util.Log.d("DownloadPipeline", "Starting FFmpeg encoding using FFmpeg Kit: ${input.absolutePath} -> ${output.absolutePath}")
             
-            val binary = bootstrapper.ensureExecutable(BinaryAsset.FFMPEG)
+            // Build FFmpeg command using FFmpeg Kit
+            val command = "-y -i \"${input.absolutePath}\" -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k -movflags +faststart \"${output.absolutePath}\""
             
-            // Additional verification of FFmpeg binary
-            android.util.Log.d("DownloadPipeline", "FFmpeg binary path: ${binary.absolutePath}")
-            android.util.Log.d("DownloadPipeline", "FFmpeg binary exists: ${binary.exists()}")
-            android.util.Log.d("DownloadPipeline", "FFmpeg binary canExecute: ${binary.canExecute()}")
-            android.util.Log.d("DownloadPipeline", "FFmpeg binary canRead: ${binary.canRead()}")
-            android.util.Log.d("DownloadPipeline", "FFmpeg binary size: ${binary.length()} bytes")
-            android.util.Log.d("DownloadPipeline", "FFmpeg binary parent: ${binary.parentFile?.absolutePath}")
+            android.util.Log.d("DownloadPipeline", "Executing FFmpeg command: ffmpeg $command")
             
-            if (!binary.canExecute()) {
-                val errorMsg = "FFmpeg binary is not executable: ${binary.absolutePath}"
-                android.util.Log.e("DownloadPipeline", errorMsg)
-                return EncodingResult(false, errorMsg)
-            }
-
-            if (!binary.canRead()) {
-                val errorMsg = "FFmpeg binary is not readable: ${binary.absolutePath} (Error 13: Permission denied)"
-                android.util.Log.e("DownloadPipeline", errorMsg)
-                return EncodingResult(false, errorMsg)
-            }
+            val session = FFmpegKit.execute(command)
+            val returnCode = session.returnCode
             
-            val processBuilder = ProcessBuilder(
-                binary.absolutePath,
-                "-y",
-                "-i", input.absolutePath,
-                "-c:v", "libx264",
-                "-preset", "fast",
-                "-crf", "23",
-                "-c:a", "aac",
-                "-b:a", "128k",
-                "-movflags", "+faststart",
-                output.absolutePath
-            )
-            processBuilder.redirectErrorStream(true)
-            processBuilder.directory(binary.parentFile)  // Set working directory to binary's parent
+            android.util.Log.d("DownloadPipeline", "FFmpeg Kit return code: $returnCode")
             
-            // Set LD_LIBRARY_PATH to include the library directory for dependency resolution
-            val libDir = binary.parentFile?.absolutePath
-            if (libDir != null) {
-                val currentPath = processBuilder.environment()["LD_LIBRARY_PATH"] ?: ""
-                processBuilder.environment()["LD_LIBRARY_PATH"] = if (currentPath.isNotEmpty()) "$libDir:$currentPath" else libDir
-                android.util.Log.d("DownloadPipeline", "Set LD_LIBRARY_PATH: $libDir")
-            }
-            
-            val process = processBuilder.start()
-
-            val outputLines = mutableListOf<String>()
-            val reader = process.inputStream.bufferedReader()
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                outputLines.add(line ?: "")
-                if (outputLines.size <= 50) {
-                    android.util.Log.d("DownloadPipeline", "FFmpeg: ${line}")
+            if (ReturnCode.isSuccess(returnCode)) {
+                if (!output.exists()) {
+                    android.util.Log.e("DownloadPipeline", "FFmpeg Kit completed but output file not created")
+                    return EncodingResult(false, "Output file was not created")
                 }
-            }
-
-            val finished = process.waitFor(300, TimeUnit.SECONDS)
-            
-            if (!finished) {
-                process.destroy()
-                android.util.Log.e("DownloadPipeline", "FFmpeg timeout after 300 seconds")
-                return EncodingResult(false, "FFmpeg timeout (processing took too long)")
-            }
-            
-            val exitCode = process.exitValue()
-            android.util.Log.d("DownloadPipeline", "FFmpeg exit code: $exitCode")
-            
-            if (exitCode == 127) {
-                val errorMsg = buildString {
-                    appendLine("FFmpeg binary not found or not executable (exit code 127)")
-                    appendLine("Binary path: ${binary.absolutePath}")
-                    appendLine("Binary exists: ${binary.exists()}, canExecute: ${binary.canExecute()}, size: ${binary.length()} bytes")
-                    appendLine()
-                    appendLine("Exit code 127 typically means:")
-                    appendLine("1. Binary is a placeholder stub (usually 4 KB) - see FFMPEG_BINARY_SETUP.md")
-                    appendLine("2. Binary format is incompatible with device architecture")
-                    appendLine("3. Required shared libraries are missing")
-                    appendLine()
-                    appendLine("SOLUTION: Replace placeholder binaries with real FFmpeg.")
-                    appendLine("See FFMPEG_QUICK_SETUP.md for fast download instructions.")
+                
+                if (output.length() == 0L) {
+                    android.util.Log.e("DownloadPipeline", "FFmpeg Kit completed but output file is empty")
+                    return EncodingResult(false, "Output file is empty")
                 }
-                android.util.Log.e("DownloadPipeline", errorMsg)
-                return EncodingResult(false, errorMsg.toString())
+                
+                android.util.Log.d("DownloadPipeline", "FFmpeg Kit encoding successful. Output size: ${output.length()} bytes")
+                EncodingResult(true, null)
+            } else if (ReturnCode.isCancel(returnCode)) {
+                android.util.Log.w("DownloadPipeline", "FFmpeg Kit encoding cancelled")
+                EncodingResult(false, "FFmpeg encoding was cancelled")
+            } else {
+                val output = session.output
+                android.util.Log.e("DownloadPipeline", "FFmpeg Kit failed with return code: $returnCode")
+                if (output != null && output.isNotEmpty()) {
+                    android.util.Log.e("DownloadPipeline", "FFmpeg Kit output: $output")
+                }
+                EncodingResult(false, "FFmpeg encoding failed (return code: $returnCode)")
             }
-            
-            if (exitCode != 0) {
-                val errorDetails = outputLines.takeLast(5).joinToString("\n")
-                android.util.Log.e("DownloadPipeline", "FFmpeg failed with exit code $exitCode. Last lines:\n$errorDetails")
-                return EncodingResult(false, "FFmpeg encoding failed (exit code: $exitCode)")
-            }
-            
-            if (!output.exists()) {
-                android.util.Log.e("DownloadPipeline", "FFmpeg completed but output file not created")
-                return EncodingResult(false, "Output file was not created")
-            }
-            
-            if (output.length() == 0L) {
-                android.util.Log.e("DownloadPipeline", "FFmpeg completed but output file is empty")
-                return EncodingResult(false, "Output file is empty")
-            }
-            
-            android.util.Log.d("DownloadPipeline", "FFmpeg encoding successful. Output size: ${output.length()} bytes")
-            EncodingResult(true, null)
         } catch (error: Exception) {
-            android.util.Log.e("DownloadPipeline", "FFmpeg exception: ${error.message}", error)
+            android.util.Log.e("DownloadPipeline", "FFmpeg Kit exception: ${error.message}", error)
             EncodingResult(false, "FFmpeg error: ${error.message}")
         }
     }

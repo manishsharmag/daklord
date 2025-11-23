@@ -55,12 +55,6 @@ android {
         }
     }
 
-    sourceSets {
-        getByName("main") {
-            jniLibs.srcDirs("src/main/jniLibs")
-        }
-    }
-
     packaging {
         jniLibs {
             useLegacyPackaging = false
@@ -91,12 +85,13 @@ dependencies {
 
 tasks.register("validateNativeLibs") {
     group = "verification"
-    description = "Validates that native libraries are present and not corrupted"
+    description = "Validates that yt-dlp native library is present and not corrupted (FFmpeg is handled by FFmpeg Kit)"
     
     doLast {
         val jniLibsDir = file("src/main/jniLibs")
         val architectures = listOf("armeabi-v7a", "arm64-v8a", "x86_64")
-        val requiredLibs = listOf("libytdlp_bridge.so", "libffmpeg_bridge.so")
+        // Only validate yt-dlp - FFmpeg is now provided by ffmpeg_kit_flutter_new
+        val requiredLibs = listOf("libytdlp_bridge.so")
         
         var allValid = true
         
@@ -126,7 +121,7 @@ tasks.register("validateNativeLibs") {
             }
         }
         
-        logger.lifecycle("Native library validation complete")
+        logger.lifecycle("Native library validation complete. Note: FFmpeg is now provided by FFmpeg Kit dependency.")
     }
 }
 

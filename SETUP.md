@@ -37,11 +37,12 @@ The setup script automatically:
 3. ✅ **Detects/Installs NDK** - Finds existing NDK or attempts installation via sdkmanager
 4. ✅ **Creates local.properties** - Configures SDK paths for Gradle
 5. ✅ **Updates gradle.properties** - Adds build optimization flags
-6. ✅ **Sets up jniLibs** - Creates native library directory structure with placeholders
+6. ✅ **Sets up jniLibs** - Creates native library directory structure with placeholders (for yt-dlp only)
 7. ✅ **Validates TensorFlow Lite** - Checks that TensorFlow Lite dependencies are available
-8. ✅ **Cleans build artifacts** - Removes any corrupted cache or build files
-9. ✅ **Refreshes Flutter dependencies** - Runs `flutter clean` and `flutter pub get`
-10. ✅ **Validates setup** - Ensures all configurations are correct
+8. ✅ **Validates FFmpeg Kit** - Ensures FFmpeg Kit dependency is available via Gradle
+9. ✅ **Cleans build artifacts** - Removes any corrupted cache or build files
+10. ✅ **Refreshes Flutter dependencies** - Runs `flutter clean` and `flutter pub get`
+11. ✅ **Validates setup** - Ensures all configurations are correct
 
 ## After Setup
 
@@ -161,19 +162,16 @@ bash scripts/setup-android-env.sh
 
 ## Native Libraries
 
-The project uses the following native libraries:
+The project now uses FFmpeg Kit for FFmpeg, which is automatically managed via Gradle dependency. However, yt-dlp requires manual setup:
 
-- **libytdlp_bridge.so** - yt-dlp downloader engine
-- **libffmpeg_bridge.so** - FFmpeg for video processing
+- **libytdlp_bridge.so** - yt-dlp downloader engine (requires manual binary installation)
+- **FFmpeg** - Now provided by [ffmpeg_kit_flutter_new](https://pub.dev/packages/ffmpeg_kit_flutter_new) dependency (automatic via Gradle)
 
-These are loaded at runtime from:
-- `android/app/src/main/jniLibs/` (compile-time placeholders)
-- `android/app/src/main/assets/` (runtime stubs)
+The `BinaryBootstrapper` class handles runtime extraction and execution of yt-dlp only.
 
-The `BinaryBootstrapper` class handles runtime extraction and execution.
+## TensorFlow Lite & FFmpeg Kit Integration
 
-## TensorFlow Lite Integration
-
+### TensorFlow Lite
 The upscaling feature uses TensorFlow Lite with:
 - **org.tensorflow:tensorflow-lite:2.13.0** - Core inference engine
 - **org.tensorflow:tensorflow-lite-gpu:2.13.0** - GPU acceleration
@@ -186,6 +184,9 @@ android/app/src/main/assets/upscaler/esrgan_fp16.tflite
 ```
 
 Currently, there's a stub file that serves as a placeholder. The app will fall back to bicubic scaling if the model is not available.
+
+### FFmpeg Kit
+FFmpeg is now provided via **ffmpeg_kit_flutter_new: ^4.0.0** dependency declared in `pubspec.yaml`. This handles all FFmpeg binary management automatically through Gradle. No manual FFmpeg binary setup is required.
 
 ## Environment Variables
 
