@@ -59,7 +59,7 @@ class DownloaderBridge(private val activity: FlutterActivity) :
     private val bootstrapper = BinaryBootstrapper(activity.applicationContext)
     private val graphqlClient = InstagramGraphqlClient(httpClient, urlResolver)
     private val metadataExtractor = YtDlpMetadataExtractor(bootstrapper, graphqlClient)
-    private val downloadPipeline = ScopedDownloadPipeline(bootstrapper, httpClient)
+    private val downloadPipeline = ScopedDownloadPipeline(bootstrapper, httpClient, activity.applicationContext)
     private val historyStore = DownloadHistoryStore(activity.applicationContext)
     private val permissionHelper = StoragePermissionHelper(activity)
     private val tasks = ConcurrentHashMap<String, NativeDownloadTask>()
@@ -561,6 +561,7 @@ class YtDlpMetadataExtractor(
 class ScopedDownloadPipeline(
     private val bootstrapper: BinaryBootstrapper,
     private val httpClient: OkHttpClient,
+    private val context: Context,
 ) {
     suspend fun run(
         taskId: String,
@@ -569,7 +570,11 @@ class ScopedDownloadPipeline(
         onProgress: (Double, Int) -> Unit,
     ): File = withContext(Dispatchers.IO) {
         val baseDir = resolveDownloadDir(downloadFolder)
+        // Use app's internal cache for temporary processing (supports execution)
+        val tempDir = File(context.cacheDir, "download-temp").apply { mkdirs() }
+        
         android.util.Log.d("DownloadPipeline", "Base directory: ${baseDir.absolutePath}")
+        android.util.Log.d("DownloadPipeline", "Temp directory: ${tempDir.absolutePath}")
 
         if (!baseDir.exists()) {
             val created = baseDir.mkdirs()
@@ -589,7 +594,8 @@ class ScopedDownloadPipeline(
         val timestamp = currentTimestampToken()
         val baseFileName = "${safeTitle}_$timestamp"
         val finalOutput = ensureUniqueOutputFile(baseDir, baseFileName)
-        val tempOutput = File(baseDir, "${finalOutput.nameWithoutExtension}_temp.mp4")
+        // Use internal cache temp directory (supports execution) instead of external storage (typically noexec)
+        val tempOutput = File(tempDir, "${finalOutput.nameWithoutExtension}_temp.mp4")
 
         android.util.Log.d("DownloadPipeline", "Original title: '${metadata.title}'")
         android.util.Log.d("DownloadPipeline", "Sanitized title: '$safeTitle'")
@@ -615,6 +621,11 @@ class ScopedDownloadPipeline(
             if (encodeResult.success && finalOutput.exists() && finalOutput.length() > 0) {
                 android.util.Log.d("DownloadPipeline", "FFmpeg encoding successful. Final size: ${finalOutput.length()} bytes")
                 tempOutput.delete()
+                try {
+                    tempDir.deleteRecursively()
+                } catch (e: Exception) {
+                    android.util.Log.w("DownloadPipeline", "Failed to cleanup temp directory: ${e.message}")
+                }
                 return@withContext finalOutput
             } else {
                 android.util.Log.e("DownloadPipeline", "FFmpeg encoding failed: ${encodeResult.error}")
@@ -639,6 +650,11 @@ class ScopedDownloadPipeline(
                 if (encodeResult.success && finalOutput.exists() && finalOutput.length() > 0) {
                     android.util.Log.d("DownloadPipeline", "FFmpeg encoding successful. Final size: ${finalOutput.length()} bytes")
                     tempOutput.delete()
+                    try {
+                        tempDir.deleteRecursively()
+                    } catch (e: Exception) {
+                        android.util.Log.w("DownloadPipeline", "Failed to cleanup temp directory: ${e.message}")
+                    }
                     return@withContext finalOutput
                 } else {
                     android.util.Log.e("DownloadPipeline", "FFmpeg encoding failed: ${encodeResult.error}")
@@ -653,6 +669,14 @@ class ScopedDownloadPipeline(
 
         tempOutput.delete()
         android.util.Log.e("DownloadPipeline", "All download methods failed. Last error: $lastError")
+        
+        // Cleanup temp directory
+        try {
+            tempDir.deleteRecursively()
+        } catch (e: Exception) {
+            android.util.Log.w("DownloadPipeline", "Failed to cleanup temp directory: ${e.message}")
+        }
+        
         throw IOException(lastError ?: "Instagram download failed. Please try again.")
     }
 
@@ -778,6 +802,19 @@ class ScopedDownloadPipeline(
                 android.util.Log.e("DownloadPipeline", "FFmpeg input file is empty: ${input.absolutePath}")
                 return EncodingResult(false, "Input file is empty")
             }
+
+            // Verify input file is readable (critical for Android 15+)
+            if (!input.canRead()) {
+                android.util.Log.e("DownloadPipeline", "FFmpeg input file is not readable (permission denied): ${input.absolutePath}")
+                return EncodingResult(false, "Cannot read input file - check permissions (Error 13: Permission denied)")
+            }
+            
+            // Verify output directory is writable
+            val outputDir = output.parentFile
+            if (outputDir != null && !outputDir.canWrite()) {
+                android.util.Log.e("DownloadPipeline", "FFmpeg output directory is not writable: ${outputDir.absolutePath}")
+                return EncodingResult(false, "Cannot write to output directory - check MANAGE_EXTERNAL_STORAGE permission")
+            }
             
             android.util.Log.d("DownloadPipeline", "Starting FFmpeg encoding: ${input.absolutePath} -> ${output.absolutePath}")
             
@@ -787,15 +824,23 @@ class ScopedDownloadPipeline(
             android.util.Log.d("DownloadPipeline", "FFmpeg binary path: ${binary.absolutePath}")
             android.util.Log.d("DownloadPipeline", "FFmpeg binary exists: ${binary.exists()}")
             android.util.Log.d("DownloadPipeline", "FFmpeg binary canExecute: ${binary.canExecute()}")
+            android.util.Log.d("DownloadPipeline", "FFmpeg binary canRead: ${binary.canRead()}")
             android.util.Log.d("DownloadPipeline", "FFmpeg binary size: ${binary.length()} bytes")
+            android.util.Log.d("DownloadPipeline", "FFmpeg binary parent: ${binary.parentFile?.absolutePath}")
             
             if (!binary.canExecute()) {
                 val errorMsg = "FFmpeg binary is not executable: ${binary.absolutePath}"
                 android.util.Log.e("DownloadPipeline", errorMsg)
                 return EncodingResult(false, errorMsg)
             }
+
+            if (!binary.canRead()) {
+                val errorMsg = "FFmpeg binary is not readable: ${binary.absolutePath} (Error 13: Permission denied)"
+                android.util.Log.e("DownloadPipeline", errorMsg)
+                return EncodingResult(false, errorMsg)
+            }
             
-            val process = ProcessBuilder(
+            val processBuilder = ProcessBuilder(
                 binary.absolutePath,
                 "-y",
                 "-i", input.absolutePath,
@@ -807,8 +852,18 @@ class ScopedDownloadPipeline(
                 "-movflags", "+faststart",
                 output.absolutePath
             )
-                .redirectErrorStream(true)
-                .start()
+            processBuilder.redirectErrorStream(true)
+            processBuilder.directory(binary.parentFile)  // Set working directory to binary's parent
+            
+            // Set LD_LIBRARY_PATH to include the library directory for dependency resolution
+            val libDir = binary.parentFile?.absolutePath
+            if (libDir != null) {
+                val currentPath = processBuilder.environment()["LD_LIBRARY_PATH"] ?: ""
+                processBuilder.environment()["LD_LIBRARY_PATH"] = if (currentPath.isNotEmpty()) "$libDir:$currentPath" else libDir
+                android.util.Log.d("DownloadPipeline", "Set LD_LIBRARY_PATH: $libDir")
+            }
+            
+            val process = processBuilder.start()
 
             val outputLines = mutableListOf<String>()
             val reader = process.inputStream.bufferedReader()
@@ -830,6 +885,24 @@ class ScopedDownloadPipeline(
             
             val exitCode = process.exitValue()
             android.util.Log.d("DownloadPipeline", "FFmpeg exit code: $exitCode")
+            
+            if (exitCode == 127) {
+                val errorMsg = buildString {
+                    appendLine("FFmpeg binary not found or not executable (exit code 127)")
+                    appendLine("Binary path: ${binary.absolutePath}")
+                    appendLine("Binary exists: ${binary.exists()}, canExecute: ${binary.canExecute()}, size: ${binary.length()} bytes")
+                    appendLine()
+                    appendLine("Exit code 127 typically means:")
+                    appendLine("1. Binary is a placeholder stub (usually 4 KB) - see FFMPEG_BINARY_SETUP.md")
+                    appendLine("2. Binary format is incompatible with device architecture")
+                    appendLine("3. Required shared libraries are missing")
+                    appendLine()
+                    appendLine("SOLUTION: Replace placeholder binaries with real FFmpeg.")
+                    appendLine("See FFMPEG_QUICK_SETUP.md for fast download instructions.")
+                }
+                android.util.Log.e("DownloadPipeline", errorMsg)
+                return EncodingResult(false, errorMsg.toString())
+            }
             
             if (exitCode != 0) {
                 val errorDetails = outputLines.takeLast(5).joinToString("\n")

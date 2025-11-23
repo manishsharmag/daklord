@@ -2,76 +2,93 @@ package com.example.insta_reel_downloader
 
 import android.content.Context
 import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.io.IOException
-import java.io.InputStream
 
-enum class BinaryAsset(val jniName: String, val stubName: String, val outputName: String) {
-    YT_DLP("libytdlp_bridge.so", "yt-dlp.stub", "yt-dlp"),
-    FFMPEG("libffmpeg_bridge.so", "ffmpeg.stub", "ffmpeg"),
+enum class BinaryAsset(val jniName: String, val outputName: String) {
+    YT_DLP("libytdlp_bridge.so", "yt-dlp"),
+    FFMPEG("libffmpeg_bridge.so", "ffmpeg"),
 }
 
 class BinaryBootstrapper(private val context: Context) {
-    private val binariesDir = File(context.cacheDir, "native-binaries").apply { mkdirs() }
+    // Android 10+ security model: native libraries are extracted to /data/app/{package}/lib/{arch}/
+    // This location has proper execute permissions and is the only approved location for binary execution
+    // See: https://developer.android.com/training/articles/security-tips#NativeCode
 
     fun ensureExecutable(asset: BinaryAsset): File {
-        val target = File(binariesDir, asset.outputName)
+        val binary = findNativeLibrary(asset.jniName)
         
-        if (target.exists()) {
-            // Verify existing binary is executable
-            if (target.canExecute() && target.length() > 0) {
-                android.util.Log.d("BinaryBootstrapper", "Using existing executable binary: ${target.absolutePath}")
-                return target
+        if (binary != null && binary.exists() && binary.canExecute()) {
+            android.util.Log.d("BinaryBootstrapper", "Found executable native library: ${binary.absolutePath}")
+            android.util.Log.d("BinaryBootstrapper", "Binary size: ${binary.length()} bytes")
+            android.util.Log.d("BinaryBootstrapper", "Permissions - canExecute: true, canRead: ${binary.canRead()}")
+            
+            // Warn if binary appears to be a placeholder (very small)
+            if (binary.length() < 10000) {  // Less than 10 KB
+                android.util.Log.w("BinaryBootstrapper", 
+                    "WARNING: ${asset.jniName} appears to be a placeholder stub (${binary.length()} bytes). " +
+                    "This will likely fail at runtime with exit code 127. " +
+                    "See FFMPEG_BINARY_SETUP.md for instructions on obtaining real binaries.")
+            }
+            
+            return binary
+        }
+        
+        val diagnostics = buildString {
+            appendLine("Native library not found or not executable: ${asset.jniName}")
+            appendLine("Expected location: /data/app/com.example.insta_reel_downloader/lib/{arch}/${asset.jniName}")
+            if (binary != null) {
+                appendLine("Binary found at: ${binary.absolutePath}")
+                appendLine("  - exists: ${binary.exists()}")
+                appendLine("  - isFile: ${binary.isFile}")
+                appendLine("  - canRead: ${binary.canRead()}")
+                appendLine("  - canExecute: ${binary.canExecute()}")
+                appendLine("  - size: ${binary.length()} bytes")
             } else {
-                android.util.Log.w("BinaryBootstrapper", "Existing binary not executable or empty, re-extracting: ${target.absolutePath}")
-                target.delete()
+                appendLine("Binary not found at expected location")
             }
+            appendLine()
+            appendLine("CRITICAL: This app requires REAL FFmpeg and yt-dlp binaries to function.")
+            appendLine("The repository contains only placeholder stub files (4 KB).")
+            appendLine()
+            appendLine("To fix this issue:")
+            appendLine("1. See FFMPEG_BINARY_SETUP.md for detailed instructions")
+            appendLine("2. Or use FFMPEG_QUICK_SETUP.md for the fastest path")
+            appendLine()
+            appendLine("Possible causes:")
+            appendLine("1. APK does not contain real native libraries (stubs only)")
+            appendLine("2. App was not properly installed (reinstall required)")
+            appendLine("3. Device storage is full (clear space and reinstall)")
+            appendLine("4. APK does not contain native libraries for device architecture")
+            appendLine("5. Filesystem does not have execute permissions")
         }
         
-        android.util.Log.d("BinaryBootstrapper", "Extracting binary ${asset.outputName} to: ${target.absolutePath}")
-        
-        val input = loadBinary(asset)
-        input.use { source ->
-            FileOutputStream(target).use { output ->
-                source.copyTo(output)
-            }
-        }
-        
-        // Set proper permissions for execution
-        target.setExecutable(true, false)  // false = allow execution for all users
-        target.setReadable(true, false)     // false = allow reading for all users  
-        target.setWritable(true, false)     // false = allow writing for all users
-        
-        // Verify the binary is executable before returning
-        if (!target.canExecute()) {
-            val errorMsg = "Failed to set executable permission for binary: ${target.absolutePath}"
-            android.util.Log.e("BinaryBootstrapper", errorMsg)
-            throw IOException(errorMsg)
-        }
-        
-        if (target.length() == 0L) {
-            val errorMsg = "Extracted binary is empty: ${target.absolutePath}"
-            android.util.Log.e("BinaryBootstrapper", errorMsg)
-            throw IOException(errorMsg)
-        }
-        
-        android.util.Log.d("BinaryBootstrapper", "Successfully extracted and made executable: ${target.absolutePath} (${target.length()} bytes)")
-        return target
+        android.util.Log.e("BinaryBootstrapper", diagnostics)
+        throw IOException(diagnostics.toString())
     }
 
-    private fun loadBinary(asset: BinaryAsset): InputStream {
-        val nativeDir = context.applicationInfo.nativeLibraryDir
-        if (nativeDir != null) {
-            val candidate = File(nativeDir, asset.jniName)
-            if (candidate.exists()) {
-                return FileInputStream(candidate)
+    private fun findNativeLibrary(jniName: String): File? {
+        // Get the native library directory where Android extracts libraries
+        val nativeLibDir = context.applicationInfo.nativeLibraryDir
+        
+        if (nativeLibDir != null) {
+            val libFile = File(nativeLibDir, jniName)
+            
+            android.util.Log.d("BinaryBootstrapper", "Checking native library at: ${libFile.absolutePath}")
+            android.util.Log.d("BinaryBootstrapper", "Exists: ${libFile.exists()}")
+            android.util.Log.d("BinaryBootstrapper", "Is file: ${libFile.isFile}")
+            android.util.Log.d("BinaryBootstrapper", "Can execute: ${libFile.canExecute()}")
+            
+            if (libFile.exists() && libFile.isFile && libFile.canExecute()) {
+                return libFile
+            } else if (libFile.exists()) {
+                android.util.Log.w("BinaryBootstrapper", 
+                    "Native library exists but not executable. " +
+                    "canRead: ${libFile.canRead()}, canWrite: ${libFile.canWrite()}")
             }
         }
-        return try {
-            context.assets.open("downloader/${asset.stubName}")
-        } catch (_: IOException) {
-            asset.stubName.byteInputStream()
-        }
+        
+        android.util.Log.e("BinaryBootstrapper", "Native library directory is null or inaccessible")
+        return null
     }
 }
+

@@ -2,6 +2,10 @@
 
 A Flutter + Kotlin application that downloads Instagram reels on-device, stores them locally, and optionally upscales them with Real-ESRGAN using TensorFlow Lite, FFmpeg, and yt-dlp binaries bundled per-ABI. The app follows a clean `core/data/domain/presentation` architecture, uses Riverpod for state management, and exposes a Material 3 UI with Home, Downloads, and Settings tabs.
 
+> ⚠️ **Important:** This app requires **actual FFmpeg and yt-dlp binaries** to function. The repository contains only placeholder stub files (4 KB each). To use the app, you must obtain the real binaries and place them in `android/app/src/main/jniLibs/`. 
+>
+> **👉 Quick Start:** See [`FFMPEG_DOCUMENTATION_INDEX.md`](FFMPEG_DOCUMENTATION_INDEX.md) for organized guides by reading preference
+
 ## Highlights
 - **No backend services** – URL validation, metadata extraction, downloading, and upscaling all occur locally via platform channels.
 - **Native binary pipeline** – Kotlin bridges bootstrap yt-dlp and FFmpeg executables from `jniLibs`, keeping the Flutter layer lightweight.
@@ -34,6 +38,13 @@ For release builds, keystore handling, and Play Store packaging, see the compreh
 ## Documentation Map
 | Topic | Location |
 | --- | --- |
+| **⚠️ FFmpeg binary setup & troubleshooting** | [`FFMPEG_BINARY_SETUP.md`](FFMPEG_BINARY_SETUP.md) |
+| **Finding Android FFmpeg binaries (if stuck)** | [`ANDROID_FFMPEG_DOWNLOAD.md`](ANDROID_FFMPEG_DOWNLOAD.md) |
+| **Direct binary download links** | [`FFMPEG_BINARY_SOURCES.md`](FFMPEG_BINARY_SOURCES.md) |
+| Quick FFmpeg setup guide | [`FFMPEG_QUICK_SETUP.md`](FFMPEG_QUICK_SETUP.md) |
+| Deployment checklist | [`DEPLOYMENT_CHECKLIST.md`](DEPLOYMENT_CHECKLIST.md) |
+| Exit code 127 root cause | [`EXIT_CODE_127_EXPLAINED.md`](EXIT_CODE_127_EXPLAINED.md) |
+| Current project status | [`STATUS_REPORT.md`](STATUS_REPORT.md) |
 | **Android build setup & troubleshooting** | [`SETUP.md`](SETUP.md) |
 | Deployment, signing & Play Store checklist | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) |
 | Upscaling architecture & model conversion | [`UPSCALING.md`](UPSCALING.md) |

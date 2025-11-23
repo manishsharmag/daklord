@@ -31,13 +31,22 @@ class _AppShellState extends ConsumerState<AppShell> {
     if (_permissionsRequested) return;
     _permissionsRequested = true;
 
-    final granted = await _permissionService.requestStoragePermission();
-    if (!granted && mounted) {
+    // Request storage permission (includes media permissions)
+    final storageGranted = await _permissionService.requestStoragePermission();
+    
+    // For Android 15+, also explicitly request MANAGE_EXTERNAL_STORAGE
+    // This is needed for FFmpeg to access and write files
+    final manageStorageGranted = await _permissionService.requestManageExternalStoragePermission();
+    
+    // Request audio permission for FFmpeg operations
+    await _permissionService.requestAudioPermission();
+    
+    if ((!storageGranted || !manageStorageGranted) && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text(
-            'Storage permission is required to download videos. '
-            'You can grant it in Settings.',
+            'Storage and file access permissions are required to download videos. '
+            'You can grant them in Settings.',
           ),
           action: SnackBarAction(
             label: 'Settings',
@@ -45,7 +54,7 @@ class _AppShellState extends ConsumerState<AppShell> {
               _permissionService.openSettings();
             },
           ),
-          duration: const Duration(seconds: 5),
+          duration: const Duration(seconds: 6),
         ),
       );
     }
