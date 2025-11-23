@@ -37,6 +37,9 @@ import org.json.JSONException
 import org.json.JSONObject
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
+import com.chaquo.python.Python
+import com.chaquo.python.PyObject
+import com.chaquo.python.android.AndroidPlatform
 
 private const val DOWNLOADER_CHANNEL = "com.insta.reel/downloader"
 private const val DOWNLOADER_EVENTS = "com.insta.reel/downloader/events"
@@ -56,11 +59,19 @@ class DownloaderBridge(private val activity: FlutterActivity) :
         .readTimeout(30, TimeUnit.SECONDS)
         .callTimeout(45, TimeUnit.SECONDS)
         .build()
+    
+    private val python: Python by lazy {
+        if (!Python.isStarted()) {
+            AndroidPlatform.start(activity.applicationContext)
+        }
+        Python.getInstance()
+    }
+    
     private val urlResolver = InstagramUrlResolver(httpClient)
     private val validator = ReelUrlValidator(urlResolver)
     private val graphqlClient = InstagramGraphqlClient(httpClient, urlResolver)
-    private val metadataExtractor = YtDlpMetadataExtractor(activity.applicationContext, graphqlClient)
-    private val downloadPipeline = ScopedDownloadPipeline(activity.applicationContext, httpClient)
+    private val metadataExtractor by lazy { YtDlpMetadataExtractor(activity.applicationContext, graphqlClient, python) }
+    private val downloadPipeline by lazy { ScopedDownloadPipeline(activity.applicationContext, httpClient, python) }
     private val historyStore = DownloadHistoryStore(activity.applicationContext)
     private val permissionHelper = StoragePermissionHelper(activity)
     private val tasks = ConcurrentHashMap<String, NativeDownloadTask>()
@@ -429,6 +440,7 @@ data class NativeDownloadTask(
 class YtDlpMetadataExtractor(
     private val context: android.content.Context,
     private val graphqlClient: InstagramGraphqlClient,
+    private val python: Python,
 ) {
     suspend fun extract(url: String): ReelMetadata = withContext(Dispatchers.IO) {
         graphqlClient.fetchMedia(url)?.toMetadata(url)?.let { return@withContext it }
@@ -442,30 +454,21 @@ class YtDlpMetadataExtractor(
 
     private fun runCommand(url: String): String? {
         return try {
-            val binaryPath = findYtDlpBinary()
-            if (binaryPath == null) {
-                android.util.Log.e("YtDlpMetadataExtractor", "yt-dlp binary not found")
+            android.util.Log.d("YtDlpMetadataExtractor", "Extracting metadata via Chaquopy for URL: $url")
+            
+            val module = python.getModule("ytdlp_wrapper")
+            val result = module.callAttr("extract_metadata", url)
+            
+            if (result.isNull) {
+                android.util.Log.e("YtDlpMetadataExtractor", "yt-dlp returned null")
                 return null
             }
             
-            android.util.Log.d("YtDlpMetadataExtractor", "yt-dlp binary path: $binaryPath")
-            
-            val process = ProcessBuilder(binaryPath, "--dump-json", url)
-                .redirectErrorStream(true)
-                .start()
-            val output = process.inputStream.bufferedReader().use { it.readText() }
-            val finished = process.waitFor(8, TimeUnit.SECONDS)
-            if (finished && process.exitValue() == 0 && output.isNotBlank()) output else null
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun findYtDlpBinary(): String? {
-        val nativeLibDir = context.applicationInfo.nativeLibraryDir
-        return if (nativeLibDir != null) {
-            File(nativeLibDir, "libytdlp_bridge.so").takeIf { it.exists() && it.canExecute() }?.absolutePath
-        } else {
+            val jsonString = result.toString()
+            android.util.Log.d("YtDlpMetadataExtractor", "Successfully extracted metadata")
+            jsonString
+        } catch (e: Exception) {
+            android.util.Log.e("YtDlpMetadataExtractor", "Failed to extract metadata: ${e.message}", e)
             null
         }
     }
@@ -565,6 +568,7 @@ class YtDlpMetadataExtractor(
 class ScopedDownloadPipeline(
     private val context: Context,
     private val httpClient: OkHttpClient,
+    private val python: Python,
 ) {
     suspend fun run(
         taskId: String,
@@ -696,54 +700,37 @@ class ScopedDownloadPipeline(
 
     private fun downloadWithYtDlp(url: String, output: File, onProgress: (Double, Int) -> Unit): DownloadAttempt {
         return try {
-            val binaryPath = findYtDlpBinary()
-            if (binaryPath == null) {
-                val errorMsg = "yt-dlp binary not found"
-                android.util.Log.e("DownloadPipeline", errorMsg)
-                return DownloadAttempt(false, errorMsg)
-            }
+            android.util.Log.d("DownloadPipeline", "Starting yt-dlp download via Chaquopy: $url -> ${output.absolutePath}")
             
-            android.util.Log.d("DownloadPipeline", "yt-dlp binary path: $binaryPath")
-            
-            val process = ProcessBuilder(
-                binaryPath,
-                "--no-check-certificate",
-                "--no-warnings",
-                "--retries", "5",
-                "--fragment-retries", "5",
-                "--retry-sleep", "2",
-                "--concurrent-fragments", "4",
-                "-f",
-                "bestvideo[ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-                "-o",
-                output.absolutePath,
-                url
-            )
-                .redirectErrorStream(true)
-                .start()
-
-            val reader = process.inputStream.bufferedReader()
-            var line: String?
-            var lastMessage: String? = null
-            while (reader.readLine().also { line = it } != null) {
-                val progressLine = line ?: continue
-                lastMessage = progressLine
-                val progressMatch = PROGRESS_PATTERN.find(progressLine)
-                if (progressMatch != null) {
-                    val percent = progressMatch.groupValues[2].toDoubleOrNull() ?: 0.0
-                    val eta = ETA_PATTERN.find(progressLine)?.let { parseEta(it.groupValues[1]) } ?: 0
-                    onProgress((percent / 100.0).coerceIn(0.0, 0.98), eta)
+            // Create a progress callback that bridges Python to Kotlin
+            val progressCallback = object : com.chaquo.python.PyObject {
+                override fun call(vararg args: Any?): PyObject {
+                    if (args.size >= 2) {
+                        val progress = (args[0] as? Double) ?: 0.0
+                        val eta = (args[1] as? Int) ?: 0
+                        onProgress(progress.coerceIn(0.0, 0.98), eta)
+                    }
+                    return python.builtins.callAttr("None")
                 }
             }
-
-            val finished = process.waitFor(240, TimeUnit.SECONDS)
-            val success = finished && process.exitValue() == 0 && output.exists() && output.length() > 0
-            if (!success) {
+            
+            val module = python.getModule("ytdlp_wrapper")
+            val result = module.callAttr("download_video", url, output.absolutePath)
+            
+            val success = result.get("success")?.toBoolean() ?: false
+            val error = result.get("error")?.let { if (it.isNull) null else it.toString() }
+            
+            if (!success && output.exists()) {
                 output.delete()
             }
-            DownloadAttempt(success, if (success) null else lastMessage ?: "yt-dlp exited with code ${process.exitValue()}")
+            
+            android.util.Log.d("DownloadPipeline", "yt-dlp download result: success=$success, error=$error")
+            DownloadAttempt(success, error)
         } catch (error: Exception) {
-            output.delete()
+            android.util.Log.e("DownloadPipeline", "yt-dlp download exception: ${error.message}", error)
+            if (output.exists()) {
+                output.delete()
+            }
             DownloadAttempt(false, error.message ?: "yt-dlp failed")
         }
     }
@@ -922,15 +909,6 @@ class ScopedDownloadPipeline(
         }
 
         return sanitized
-    }
-
-    private fun findYtDlpBinary(): String? {
-        val nativeLibDir = context.applicationInfo.nativeLibraryDir
-        return if (nativeLibDir != null) {
-            File(nativeLibDir, "libytdlp_bridge.so").takeIf { it.exists() && it.canExecute() }?.absolutePath
-        } else {
-            null
-        }
     }
 
     private data class DownloadAttempt(val success: Boolean, val error: String?)
